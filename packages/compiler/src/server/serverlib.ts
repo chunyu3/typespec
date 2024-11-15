@@ -50,7 +50,7 @@ import { resolveCodeFix } from "../core/code-fixes.js";
 import { compilerAssert, getSourceLocation } from "../core/diagnostics.js";
 import { formatTypeSpec } from "../core/formatter.js";
 import { getEntityName, getTypeName } from "../core/helpers/type-name-utils.js";
-import { resolveModule, ResolveModuleHost } from "../core/index.js";
+import { LogSink, ProcessedLog, resolveModule, ResolveModuleHost } from "../core/index.js";
 import { getPositionBeforeTrivia } from "../core/parser-utils.js";
 import { getNodeAtPosition, getNodeAtPositionDetail, visitChildren } from "../core/parser.js";
 import { ensureTrailingDirectorySeparator, getDirectoryPath } from "../core/path-utils.js";
@@ -101,6 +101,18 @@ import {
   ServerWorkspaceFolder,
 } from "./types.js";
 
+export function createServerLogSink(serverlogger: (serverlog: ServerLog) => void): LogSink {
+  function log(data: ProcessedLog) {
+    // eslint-disable-next-line no-console
+    //console.log(formatLog(data, options));
+    serverlogger({ level: data.level, message: data.message, detail: "" });
+  }
+
+  return {
+    log,
+  };
+}
+
 export function createServer(host: ServerHost): Server {
   const fileService = createFileService({ serverHost: host });
 
@@ -115,6 +127,7 @@ export function createServer(host: ServerHost): Server {
   const compilerHost = createCompilerHost();
   const npmPackageProvider = new NpmPackageProvider(compilerHost);
   const emitterProvider = new EmitterProvider(npmPackageProvider);
+  // compilerHost.logSink = createServerLogSink(log);
 
   const compileService = createCompileService({
     fileService,
