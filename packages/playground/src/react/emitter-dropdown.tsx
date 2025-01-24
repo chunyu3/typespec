@@ -1,5 +1,5 @@
 import { Select } from "@fluentui/react-components";
-import { FunctionComponent, useCallback } from "react";
+import { useCallback, type FunctionComponent } from "react";
 
 export type EmitterDropdownProps = {
   emitters: string[];
@@ -20,7 +20,7 @@ export const EmitterDropdown: FunctionComponent<EmitterDropdownProps> = ({
     (evt: any) => {
       onSelectedEmitterChange(evt.target.value);
     },
-    [onSelectedEmitterChange]
+    [onSelectedEmitterChange],
   );
   return (
     <Select

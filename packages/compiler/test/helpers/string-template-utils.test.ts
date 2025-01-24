@@ -4,7 +4,7 @@ import { ModelProperty, stringTemplateToString } from "../../src/index.js";
 import { expectDiagnosticEmpty } from "../../src/testing/expect.js";
 import { createTestRunner } from "../../src/testing/test-host.js";
 
-describe("compiler: stringTemplateToString", () => {
+describe("compiler: stringTemplateToString (deprecated)", () => {
   async function stringifyTemplate(template: string) {
     const runner = await createTestRunner();
     const { value } = (await runner.compile(`model Foo { @test value: ${template}; }`)) as {
@@ -37,7 +37,7 @@ describe("compiler: stringTemplateToString", () => {
     it("nested string template", async () => {
       await expectTemplateToString(
         '"Start ${"Nested-start ${"one"} nested-end"} end"',
-        "Start Nested-start one nested-end end"
+        "Start Nested-start one nested-end end",
       );
     });
   });
@@ -45,7 +45,7 @@ describe("compiler: stringTemplateToString", () => {
   it("stringify template with multiple spans", async () => {
     await expectTemplateToString(
       '"Start ${"one"} middle ${"two"} end"',
-      "Start one middle two end"
+      "Start one middle two end",
     );
   });
 });

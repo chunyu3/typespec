@@ -6,7 +6,6 @@ import {
   CompletionList,
   CompletionParams,
   DefinitionParams,
-  DiagnosticSeverity,
   DiagnosticTag,
   DidChangeWatchedFilesParams,
   DocumentFormattingParams,
@@ -20,9 +19,9 @@ import {
   FoldingRangeParams,
   Hover,
   HoverParams,
+  InitializedParams,
   InitializeParams,
   InitializeResult,
-  InitializedParams,
   Location,
   MarkupContent,
   MarkupKind,
@@ -39,22 +38,35 @@ import {
   SignatureHelp,
   SignatureHelpParams,
   TextDocumentChangeEvent,
+  TextDocumentIdentifier,
   TextDocumentSyncKind,
   TextEdit,
   Diagnostic as VSDiagnostic,
   WorkspaceEdit,
   WorkspaceFoldersChangeEvent,
 } from "vscode-languageserver/node.js";
-import { CharCode, codePointBefore, isIdentifierContinue } from "../core/charcode.js";
+import { CharCode } from "../core/charcode.js";
 import { resolveCodeFix } from "../core/code-fixes.js";
 import { compilerAssert, getSourceLocation } from "../core/diagnostics.js";
 import { formatTypeSpec } from "../core/formatter.js";
-import { getTypeName } from "../core/helpers/type-name-utils.js";
-import { ResolveModuleHost, resolveModule } from "../core/index.js";
+import { getEntityName, getTypeName } from "../core/helpers/type-name-utils.js";
+import {
+  NoTarget,
+  ProcessedLog,
+  resolveModule,
+  ResolveModuleHost,
+  typespecVersion,
+} from "../core/index.js";
+import { formatLog } from "../core/logger/index.js";
 import { getPositionBeforeTrivia } from "../core/parser-utils.js";
-import { getNodeAtPosition, visitChildren } from "../core/parser.js";
-import { ensureTrailingDirectorySeparator, getDirectoryPath } from "../core/path-utils.js";
-import { Program } from "../core/program.js";
+import { getNodeAtPosition, getNodeAtPositionDetail, visitChildren } from "../core/parser.js";
+import {
+  ensureTrailingDirectorySeparator,
+  getDirectoryPath,
+  joinPaths,
+  normalizePath,
+} from "../core/path-utils.js";
+import type { Program } from "../core/program.js";
 import { skipTrivia, skipWhiteSpace } from "../core/scanner.js";
 import { createSourceFile, getSourceFileKindFromExt } from "../core/source-file.js";
 import {
@@ -67,20 +79,29 @@ import {
   DiagnosticTarget,
   IdentifierNode,
   Node,
+  PositionDetail,
   SourceFile,
   SyntaxKind,
   TextRange,
   TypeReferenceNode,
   TypeSpecScriptNode,
 } from "../core/types.js";
+import { getTypeSpecCoreTemplates } from "../init/core-templates.js";
+import { validateTemplateDefinitions } from "../init/init-template-validate.js";
+import { InitTemplate } from "../init/init-template.js";
+import { scaffoldNewProject } from "../init/scaffold.js";
 import { getNormalizedRealPath, resolveTspMain } from "../utils/misc.js";
 import { getSemanticTokens } from "./classify.js";
 import { createCompileService } from "./compile-service.js";
 import { resolveCompletion } from "./completion.js";
 import { Commands } from "./constants.js";
+import { convertDiagnosticToLsp } from "./diagnostics.js";
+import { EmitterProvider } from "./emitter-provider.js";
 import { createFileService } from "./file-service.js";
 import { createFileSystemCache } from "./file-system-cache.js";
+import { NpmPackageProvider } from "./npm-package-provider.js";
 import { getSymbolStructure } from "./symbol-structure.js";
+import { provideTspconfigCompletionItems } from "./tspconfig/completion.js";
 import {
   getParameterDocumentation,
   getSymbolDetails,
@@ -88,9 +109,14 @@ import {
 } from "./type-details.js";
 import {
   CompileResult,
+  InitProjectConfig,
+  InitProjectContext,
   SemanticTokenKind,
   Server,
+  ServerCustomCapacities,
   ServerHost,
+  ServerInitializeResult,
+  ServerLog,
   ServerSourceFile,
   ServerWorkspaceFolder,
 } from "./types.js";
@@ -104,8 +130,11 @@ export function createServer(host: ServerHost): Server {
   // a file change.
   const fileSystemCache = createFileSystemCache({
     fileService,
+    log,
   });
   const compilerHost = createCompilerHost();
+  const npmPackageProvider = new NpmPackageProvider(compilerHost);
+  const emitterProvider = new EmitterProvider(npmPackageProvider);
 
   const compileService = createCompileService({
     fileService,
@@ -120,7 +149,7 @@ export function createServer(host: ServerHost): Server {
 
   let workspaceFolders: ServerWorkspaceFolder[] = [];
   let isInitialized = false;
-  let pendingMessages: string[] = [];
+  let pendingMessages: ServerLog[] = [];
 
   return {
     get pendingMessages() {
@@ -152,6 +181,10 @@ export function createServer(host: ServerHost): Server {
     getCodeActions,
     executeCommand,
     log,
+
+    getInitProjectContext,
+    validateInitProjectTemplate,
+    initProject,
   };
 
   async function initialize(params: InitializeParams): Promise<InitializeResult> {
@@ -207,45 +240,107 @@ export function createServer(host: ServerHost): Server {
           changeNotifications: true,
         },
       };
-      // eslint-disable-next-line deprecation/deprecation
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
     } else if (params.rootUri) {
       workspaceFolders = [
         {
           name: "<root>",
-          // eslint-disable-next-line deprecation/deprecation
+          // eslint-disable-next-line @typescript-eslint/no-deprecated
           uri: params.rootUri,
           path: ensureTrailingDirectorySeparator(
-            // eslint-disable-next-line deprecation/deprecation
-            await fileService.fileURLToRealPath(params.rootUri)
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
+            await fileService.fileURLToRealPath(params.rootUri),
           ),
         },
       ];
-      // eslint-disable-next-line deprecation/deprecation
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
     } else if (params.rootPath) {
       workspaceFolders = [
         {
           name: "<root>",
-          // eslint-disable-next-line deprecation/deprecation
+          // eslint-disable-next-line @typescript-eslint/no-deprecated
           uri: compilerHost.pathToFileURL(params.rootPath),
           path: ensureTrailingDirectorySeparator(
-            // eslint-disable-next-line deprecation/deprecation
-            await getNormalizedRealPath(compilerHost, params.rootPath)
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
+            await getNormalizedRealPath(compilerHost, params.rootPath),
           ),
         },
       ];
     }
 
-    log("Workspace Folders", workspaceFolders);
-    return { capabilities };
+    log({ level: "info", message: `Workspace Folders`, detail: workspaceFolders });
+    const customCapacities: ServerCustomCapacities = {
+      getInitProjectContext: true,
+      initProject: true,
+      validateInitProjectTemplate: true,
+    };
+    // the file path is expected to be .../@typespec/compiler/dist/src/server/serverlib.js
+    const curFile = normalizePath(compilerHost.fileURLToPath(import.meta.url));
+    const SERVERLIB_PATH_ENDWITH = "/dist/src/server/serverlib.js";
+    let compilerRootFolder = undefined;
+    if (!curFile.endsWith(SERVERLIB_PATH_ENDWITH)) {
+      log({ level: "warning", message: `Unexpected path for serverlib found: ${curFile}` });
+    } else {
+      compilerRootFolder = curFile.slice(0, curFile.length - SERVERLIB_PATH_ENDWITH.length);
+    }
+    const result: ServerInitializeResult = {
+      serverInfo: {
+        name: "TypeSpec Language Server",
+        version: typespecVersion,
+      },
+      capabilities,
+      customCapacities,
+      compilerRootFolder,
+      compilerCliJsPath: compilerRootFolder
+        ? joinPaths(compilerRootFolder, "cmd", "tsp.js")
+        : undefined,
+    };
+    return result;
   }
 
   function initialized(params: InitializedParams): void {
     isInitialized = true;
-    log("Initialization complete.");
+    log({ level: "info", message: "Initialization complete." });
+  }
+
+  async function getInitProjectContext(): Promise<InitProjectContext> {
+    return {
+      coreInitTemplates: await getTypeSpecCoreTemplates(host.compilerHost),
+    };
+  }
+
+  async function validateInitProjectTemplate(param: { template: InitTemplate }): Promise<boolean> {
+    const { template } = param;
+    // even when the strict validation fails, we still try to proceed with relaxed validation
+    // so just do relaxed validation directly here
+    const validationResult = validateTemplateDefinitions(template, NoTarget, false);
+    if (!validationResult.valid) {
+      for (const diag of validationResult.diagnostics) {
+        log({
+          level: diag.severity,
+          message: diag.message,
+          detail: {
+            code: diag.code,
+            url: diag.url,
+          },
+        });
+      }
+    }
+    return validationResult.valid;
+  }
+
+  async function initProject(param: { config: InitProjectConfig }): Promise<boolean> {
+    try {
+      await scaffoldNewProject(compilerHost, param.config);
+      return true;
+    } catch (e) {
+      log({ level: "error", message: "Unexpected error when initializing project", detail: e });
+      return false;
+    }
   }
 
   async function workspaceFoldersChanged(e: WorkspaceFoldersChangeEvent) {
-    log("Workspace Folders Changed", e);
+    log({ level: "info", message: "Workspace Folders Changed", detail: e });
     const map = new Map(workspaceFolders.map((f) => [f.uri, f]));
     for (const folder of e.removed) {
       map.delete(folder.uri);
@@ -257,14 +352,21 @@ export function createServer(host: ServerHost): Server {
       });
     }
     workspaceFolders = Array.from(map.values());
-    log("Workspace Folders", workspaceFolders);
+    log({ level: "info", message: `Workspace Folders`, detail: workspaceFolders });
   }
 
   function watchedFilesChanged(params: DidChangeWatchedFilesParams) {
     fileSystemCache.notify(params.changes);
+    npmPackageProvider.notify(params.changes);
+  }
+
+  function isTspConfigFile(doc: TextDocument | TextDocumentIdentifier) {
+    return doc.uri.endsWith("tspconfig.yaml");
   }
 
   async function getFoldingRanges(params: FoldingRangeParams): Promise<FoldingRange[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const ast = await compileService.getScript(params.textDocument);
     if (!ast) {
       return [];
@@ -321,6 +423,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function getDocumentSymbols(params: DocumentSymbolParams): Promise<DocumentSymbol[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const ast = await compileService.getScript(params.textDocument);
     if (!ast) {
       return [];
@@ -330,8 +434,10 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function findDocumentHighlight(
-    params: DocumentHighlightParams
+    params: DocumentHighlightParams,
   ): Promise<DocumentHighlight[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const result = await compileService.compile(params.textDocument);
     if (result === undefined) {
       return [];
@@ -341,7 +447,7 @@ export function createServer(host: ServerHost): Server {
       program,
       script,
       document.offsetAt(params.position),
-      [script]
+      [script],
     );
     return identifiers.map((identifier) => ({
       range: getRange(identifier, script.file),
@@ -350,9 +456,13 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function checkChange(change: TextDocumentChangeEvent<TextDocument>) {
+    if (isTspConfigFile(change.document)) return undefined;
+
     compileService.notifyChange(change.document);
   }
   async function reportDiagnostics({ program, document }: CompileResult) {
+    if (isTspConfigFile(document)) return undefined;
+
     currentDiagnosticIndex.clear();
     // Group diagnostics by file.
     //
@@ -370,40 +480,26 @@ export function createServer(host: ServerHost): Server {
     }
 
     for (const each of program.diagnostics) {
-      let diagDocument: TextDocument | undefined;
-
-      const location = getSourceLocation(each.target, { locateId: true });
-      if (location?.file) {
-        diagDocument = (location.file as ServerSourceFile).document;
-      } else {
-        // https://github.com/microsoft/language-server-protocol/issues/256
-        //
-        // LSP does not currently allow sending a diagnostic with no location so
-        // we report diagnostics with no location on the document that changed to
-        // trigger.
-        diagDocument = document;
+      const results = convertDiagnosticToLsp(fileService, program, document, each);
+      for (const result of results) {
+        const [diagnostic, diagDocument] = result;
+        if (each.url) {
+          diagnostic.codeDescription = {
+            href: each.url,
+          };
+        }
+        if (each.code === "deprecated") {
+          diagnostic.tags = [DiagnosticTag.Deprecated];
+        }
+        diagnostic.data = { id: diagnosticIdCounter++ };
+        const diagnostics = diagnosticMap.get(diagDocument);
+        compilerAssert(
+          diagnostics,
+          "Diagnostic reported against a source file that was not added to the program.",
+        );
+        diagnostics.push(diagnostic);
+        currentDiagnosticIndex.set(diagnostic.data.id, each);
       }
-
-      if (!diagDocument || !fileService.upToDate(diagDocument)) {
-        continue;
-      }
-
-      const start = diagDocument.positionAt(location?.pos ?? 0);
-      const end = diagDocument.positionAt(location?.end ?? 0);
-      const range = Range.create(start, end);
-      const severity = convertSeverity(each.severity);
-      const diagnostic = VSDiagnostic.create(range, each.message, severity, each.code, "TypeSpec");
-      if (each.code === "deprecated") {
-        diagnostic.tags = [DiagnosticTag.Deprecated];
-      }
-      diagnostic.data = { id: diagnosticIdCounter++ };
-      const diagnostics = diagnosticMap.get(diagDocument);
-      compilerAssert(
-        diagnostics,
-        "Diagnostic reported against a source file that was not added to the program."
-      );
-      diagnostics.push(diagnostic);
-      currentDiagnosticIndex.set(diagnostic.data.id, each);
     }
 
     for (const [document, diagnostics] of diagnosticMap) {
@@ -412,6 +508,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function getHover(params: HoverParams): Promise<Hover> {
+    if (isTspConfigFile(params.textDocument)) return { contents: [] };
+
     const result = await compileService.compile(params.textDocument);
     if (result === undefined) {
       return { contents: [] };
@@ -432,6 +530,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function getSignatureHelp(params: SignatureHelpParams): Promise<SignatureHelp | undefined> {
+    if (isTspConfigFile(params.textDocument)) return undefined;
+
     const result = await compileService.compile(params.textDocument);
     if (result === undefined) {
       return undefined;
@@ -457,10 +557,10 @@ export function createServer(host: ServerHost): Server {
   function getSignatureHelpForTemplate(
     program: Program,
     node: TypeReferenceNode,
-    argumentIndex: number
+    argumentIndex: number,
   ): SignatureHelp | undefined {
     const sym = program.checker.resolveIdentifier(
-      node.target.kind === SyntaxKind.MemberExpression ? node.target.id : node.target
+      node.target.kind === SyntaxKind.MemberExpression ? node.target.id : node.target,
     );
     const templateDeclNode = sym?.declarations[0];
     if (
@@ -507,10 +607,10 @@ export function createServer(host: ServerHost): Server {
   function getSignatureHelpForDecorator(
     program: Program,
     node: DecoratorExpressionNode | AugmentDecoratorStatementNode,
-    argumentIndex: number
+    argumentIndex: number,
   ): SignatureHelp | undefined {
     const sym = program.checker.resolveIdentifier(
-      node.target.kind === SyntaxKind.MemberExpression ? node.target.id : node.target
+      node.target.kind === SyntaxKind.MemberExpression ? node.target.id : node.target,
     );
     if (!sym) {
       return undefined;
@@ -518,7 +618,7 @@ export function createServer(host: ServerHost): Server {
 
     const decoratorDeclNode: DecoratorDeclarationStatementNode | undefined = sym.declarations.find(
       (x): x is DecoratorDeclarationStatementNode =>
-        x.kind === SyntaxKind.DecoratorDeclarationStatement
+        x.kind === SyntaxKind.DecoratorDeclarationStatement,
     );
     if (decoratorDeclNode === undefined) {
       return undefined;
@@ -548,14 +648,14 @@ export function createServer(host: ServerHost): Server {
       ...type.parameters.map((x) => {
         const info: ParameterInformation = {
           // prettier-ignore
-          label: `${x.rest ? "..." : ""}${x.name}${x.optional ? "?" : ""}: ${getTypeName(x.type)}`,
+          label: `${x.rest ? "..." : ""}${x.name}${x.optional ? "?" : ""}: ${getEntityName(x.type)}`,
         };
         const doc = parameterDocs.get(x.name);
         if (doc) {
           info.documentation = { kind: MarkupKind.Markdown, value: doc };
         }
         return info;
-      })
+      }),
     );
 
     const help: SignatureHelp = {
@@ -582,15 +682,34 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function formatDocument(params: DocumentFormattingParams): Promise<TextEdit[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const document = host.getOpenDocumentByURL(params.textDocument.uri);
     if (document === undefined) {
       return [];
     }
-    const formattedText = await formatTypeSpec(document.getText(), {
+    const path = await fileService.fileURLToRealPath(params.textDocument.uri);
+    const prettierConfig = await resolvePrettierConfig(path);
+    const resolvedConfig = prettierConfig ?? {
       tabWidth: params.options.tabSize,
       useTabs: !params.options.insertSpaces,
+    };
+    log({
+      level: "info",
+      message: `Formatting TypeSpec document: ${JSON.stringify({ fileUri: params.textDocument.uri, vscodeOptions: params.options, prettierConfig, resolvedConfig }, null, 2)}`,
     });
+    const formattedText = await formatTypeSpec(document.getText(), resolvedConfig);
     return [minimalEdit(document, formattedText)];
+  }
+
+  async function resolvePrettierConfig(path: string) {
+    try {
+      // Resolve prettier if it is installed.
+      const prettier = await import("prettier");
+      return prettier.resolveConfig(path);
+    } catch (e) {
+      return null;
+    }
   }
 
   function minimalEdit(document: TextDocument, string1: string): TextEdit {
@@ -617,6 +736,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function gotoDefinition(params: DefinitionParams): Promise<Location[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const result = await compileService.compile(params.textDocument);
     if (result === undefined) {
       return [];
@@ -638,7 +759,7 @@ export function createServer(host: ServerHost): Server {
 
   async function getImportLocation(
     importPath: string,
-    currentFile: TypeSpecScriptNode
+    currentFile: TypeSpecScriptNode,
   ): Promise<Location> {
     const host: ResolveModuleHost = {
       realpath: compilerHost.realpath,
@@ -663,6 +784,19 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function complete(params: CompletionParams): Promise<CompletionList> {
+    if (isTspConfigFile(params.textDocument)) {
+      const doc = host.getOpenDocumentByURL(params.textDocument.uri);
+      if (doc) {
+        const items = await provideTspconfigCompletionItems(doc, params.position, {
+          fileService,
+          emitterProvider,
+          log,
+        });
+        return CompletionList.create(items);
+      }
+      return CompletionList.create([]);
+    }
+
     const completions: CompletionList = {
       isIncomplete: false,
       items: [],
@@ -670,7 +804,7 @@ export function createServer(host: ServerHost): Server {
     const result = await compileService.compile(params.textDocument);
     if (result) {
       const { script, document, program } = result;
-      const node = getCompletionNodeAtPosition(script, document.offsetAt(params.position));
+      const posDetail = getCompletionNodeAtPosition(script, document.offsetAt(params.position));
 
       return await resolveCompletion(
         {
@@ -679,7 +813,7 @@ export function createServer(host: ServerHost): Server {
           completions,
           params,
         },
-        node
+        posDetail,
       );
     }
 
@@ -687,6 +821,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function findReferences(params: ReferenceParams): Promise<Location[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const result = await compileService.compile(params.textDocument);
     if (result === undefined) {
       return [];
@@ -694,12 +830,14 @@ export function createServer(host: ServerHost): Server {
     const identifiers = findReferenceIdentifiers(
       result.program,
       result.script,
-      result.document.offsetAt(params.position)
+      result.document.offsetAt(params.position),
     );
     return getLocations(identifiers);
   }
 
   async function prepareRename(params: PrepareRenameParams): Promise<Range | undefined> {
+    if (isTspConfigFile(params.textDocument)) return undefined;
+
     const result = await compileService.compile(params.textDocument);
     if (result === undefined) {
       return undefined;
@@ -709,13 +847,15 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function rename(params: RenameParams): Promise<WorkspaceEdit> {
+    if (isTspConfigFile(params.textDocument)) return { changes: {} };
+
     const changes: Record<string, TextEdit[]> = {};
     const result = await compileService.compile(params.textDocument);
     if (result) {
       const identifiers = findReferenceIdentifiers(
         result.program,
         result.script,
-        result.document.offsetAt(params.position)
+        result.document.offsetAt(params.position),
       );
       for (const id of identifiers) {
         const location = getLocation(id);
@@ -737,7 +877,7 @@ export function createServer(host: ServerHost): Server {
     program: Program,
     file: TypeSpecScriptNode,
     pos: number,
-    searchFiles: Iterable<TypeSpecScriptNode> = program.sourceFiles.values()
+    searchFiles: Iterable<TypeSpecScriptNode> = program.sourceFiles.values(),
   ): IdentifierNode[] {
     const id = getNodeAtPosition(file, pos);
     if (id?.kind !== SyntaxKind.Identifier) {
@@ -765,6 +905,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function getSemanticTokensForDocument(params: SemanticTokensParams) {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const ast = await compileService.getScript(params.textDocument);
     if (!ast) {
       return [];
@@ -774,6 +916,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function buildSemanticTokens(params: SemanticTokensParams): Promise<SemanticTokens> {
+    if (isTspConfigFile(params.textDocument)) return { data: [] };
+
     const builder = new SemanticTokensBuilder();
     const tokens = await getSemanticTokensForDocument(params);
     const file = await compilerHost.readFile(await fileService.getPath(params.textDocument));
@@ -795,6 +939,8 @@ export function createServer(host: ServerHost): Server {
   }
 
   async function getCodeActions(params: CodeActionParams): Promise<CodeAction[]> {
+    if (isTspConfigFile(params.textDocument)) return [];
+
     const actions = [];
     for (const vsDiag of params.context.diagnostics) {
       const tspDiag = currentDiagnosticIndex.get(vsDiag.data?.id);
@@ -809,7 +955,7 @@ export function createServer(host: ServerHost): Server {
               command: Commands.APPLY_CODE_FIX,
               arguments: [params.textDocument.uri, vsDiag.data?.id, fix.id],
             },
-            CodeActionKind.QuickFix
+            CodeActionKind.QuickFix,
           ),
           diagnostics: [vsDiag],
         };
@@ -873,23 +1019,9 @@ export function createServer(host: ServerHost): Server {
     return Range.create(start, end);
   }
 
-  function convertSeverity(severity: "warning" | "error"): DiagnosticSeverity {
-    switch (severity) {
-      case "warning":
-        return DiagnosticSeverity.Warning;
-      case "error":
-        return DiagnosticSeverity.Error;
-    }
-  }
-
-  function log(message: string, details: any = undefined) {
-    message = `[${new Date().toLocaleTimeString()}] ${message}`;
-    if (details) {
-      message += ": " + JSON.stringify(details, undefined, 2);
-    }
-
+  function log(log: ServerLog) {
     if (!isInitialized) {
-      pendingMessages.push(message);
+      pendingMessages.push(log);
       return;
     }
 
@@ -898,7 +1030,7 @@ export function createServer(host: ServerHost): Server {
     }
 
     pendingMessages = [];
-    host.log(message);
+    host.log(log);
   }
 
   function sendDiagnostics(document: TextDocument, diagnostics: VSDiagnostic[]) {
@@ -917,6 +1049,16 @@ export function createServer(host: ServerHost): Server {
       readFile,
       stat,
       getSourceFileKind,
+      logSink: {
+        log: (log: ProcessedLog) => {
+          const msg = formatLog(log, { excludeLogLevel: true });
+          const sLog: ServerLog = {
+            level: log.level,
+            message: msg,
+          };
+          host.log(sLog);
+        },
+      },
     };
 
     async function readFile(path: string): Promise<ServerSourceFile> {
@@ -986,7 +1128,7 @@ type SignatureHelpNode =
 
 function getSignatureHelpNodeAtPosition(
   script: TypeSpecScriptNode,
-  position: number
+  position: number,
 ): { node: SignatureHelpNode; argumentIndex: number } | undefined {
   // Move back over any trailing trivia. Otherwise, if there is no
   // closing paren/angle bracket, we can find ourselves outside the desired
@@ -1023,7 +1165,7 @@ function getSignatureHelpNodeAtPosition(
         default:
           return false;
       }
-    }
+    },
   );
 
   if (!node) {
@@ -1041,7 +1183,7 @@ function getSignatureHelpNodeAtPosition(
 function getSignatureHelpArgumentIndex(
   script: TypeSpecScriptNode,
   node: SignatureHelpNode,
-  position: number
+  position: number,
 ) {
   // Normalize arguments into a single list to avoid special case for
   // augment decorators.
@@ -1075,22 +1217,7 @@ function getSignatureHelpArgumentIndex(
 export function getCompletionNodeAtPosition(
   script: TypeSpecScriptNode,
   position: number,
-  filter: (node: Node) => boolean = (node: Node) => true
-): Node | undefined {
-  const realNode = getNodeAtPosition(script, position, filter);
-  if (realNode?.kind === SyntaxKind.StringLiteral) {
-    return realNode;
-  }
-  // If we're not immediately after an identifier character, then advance
-  // the position past any trivia. This is done because a zero-width
-  // inserted missing identifier that the user is now trying to complete
-  // starts after the trivia following the cursor.
-  const cp = codePointBefore(script.file.text, position);
-  if (!cp || !isIdentifierContinue(cp)) {
-    const newPosition = skipTrivia(script.file.text, position);
-    if (newPosition !== position) {
-      return getNodeAtPosition(script, newPosition, filter);
-    }
-  }
-  return realNode;
+  filter: (node: Node) => boolean = (node: Node) => true,
+): PositionDetail {
+  return getNodeAtPositionDetail(script, position, filter);
 }

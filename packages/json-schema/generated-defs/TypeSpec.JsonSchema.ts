@@ -1,4 +1,12 @@
-import type { DecoratorContext, ModelProperty, Namespace, Scalar, Type } from "@typespec/compiler";
+import type {
+  DecoratorContext,
+  ModelProperty,
+  Namespace,
+  Numeric,
+  Scalar,
+  Type,
+  Union,
+} from "@typespec/compiler";
 
 /**
  * Add to namespaces to emit models within that namespace to JSON schema.
@@ -12,7 +20,7 @@ import type { DecoratorContext, ModelProperty, Namespace, Scalar, Type } from "@
 export type JsonSchemaDecorator = (
   context: DecoratorContext,
   target: Type,
-  baseUri?: string
+  baseUri?: string,
 ) => void;
 
 /**
@@ -23,7 +31,7 @@ export type JsonSchemaDecorator = (
 export type BaseUriDecorator = (
   context: DecoratorContext,
   target: Namespace,
-  baseUri: string
+  baseUri: string,
 ) => void;
 
 /**
@@ -37,6 +45,11 @@ export type BaseUriDecorator = (
 export type IdDecorator = (context: DecoratorContext, target: Type, id: string) => void;
 
 /**
+ * Specify that `oneOf` should be used instead of `anyOf` for that union.
+ */
+export type OneOfDecorator = (context: DecoratorContext, target: Union | ModelProperty) => void;
+
+/**
  * Specify that the numeric type must be a multiple of some numeric value.
  *
  * @param value The numeric type must be a multiple of this value.
@@ -44,7 +57,7 @@ export type IdDecorator = (context: DecoratorContext, target: Type, id: string) 
 export type MultipleOfDecorator = (
   context: DecoratorContext,
   target: Scalar | ModelProperty,
-  value: number
+  value: Numeric,
 ) => void;
 
 /**
@@ -56,7 +69,7 @@ export type MultipleOfDecorator = (
 export type ContainsDecorator = (
   context: DecoratorContext,
   target: Type | ModelProperty,
-  value: Type
+  value: Type,
 ) => void;
 
 /**
@@ -68,7 +81,7 @@ export type ContainsDecorator = (
 export type MinContainsDecorator = (
   context: DecoratorContext,
   target: Type | ModelProperty,
-  value: number
+  value: number,
 ) => void;
 
 /**
@@ -80,7 +93,7 @@ export type MinContainsDecorator = (
 export type MaxContainsDecorator = (
   context: DecoratorContext,
   target: Type | ModelProperty,
-  value: number
+  value: number,
 ) => void;
 
 /**
@@ -88,7 +101,7 @@ export type MaxContainsDecorator = (
  */
 export type UniqueItemsDecorator = (
   context: DecoratorContext,
-  target: Type | ModelProperty
+  target: Type | ModelProperty,
 ) => void;
 
 /**
@@ -99,7 +112,7 @@ export type UniqueItemsDecorator = (
 export type MinPropertiesDecorator = (
   context: DecoratorContext,
   target: Type | ModelProperty,
-  value: number
+  value: number,
 ) => void;
 
 /**
@@ -110,7 +123,7 @@ export type MinPropertiesDecorator = (
 export type MaxPropertiesDecorator = (
   context: DecoratorContext,
   target: Type | ModelProperty,
-  value: number
+  value: number,
 ) => void;
 
 /**
@@ -123,7 +136,7 @@ export type MaxPropertiesDecorator = (
 export type ContentEncodingDecorator = (
   context: DecoratorContext,
   target: Scalar | ModelProperty,
-  value: string
+  value: string,
 ) => void;
 
 /**
@@ -134,7 +147,7 @@ export type ContentEncodingDecorator = (
 export type PrefixItemsDecorator = (
   context: DecoratorContext,
   target: Type | ModelProperty,
-  value: Type
+  value: Type,
 ) => void;
 
 /**
@@ -145,7 +158,7 @@ export type PrefixItemsDecorator = (
 export type ContentMediaTypeDecorator = (
   context: DecoratorContext,
   target: Scalar | ModelProperty,
-  value: string
+  value: string,
 ) => void;
 
 /**
@@ -157,22 +170,50 @@ export type ContentMediaTypeDecorator = (
 export type ContentSchemaDecorator = (
   context: DecoratorContext,
   target: Scalar | ModelProperty,
-  value: Type
+  value: Type,
 ) => void;
 
 /**
  * Specify a custom property to add to the emitted schema. Useful for adding custom keywords
- * and other vendor-specific extensions. The value will be converted to a schema unless the parameter
- * is wrapped in the `Json<Data>` template. For example, `@extension("x-schema", { x: "value" })` will
- * emit a JSON schema value for `x-schema`, whereas `@extension("x-schema", Json<{x: "value"}>)` will
- * emit the raw JSON code `{x: "value"}`.
+ * and other vendor-specific extensions. Scalar values need to be specified using `typeof` to be converted to a schema.
+ *
+ * For example, `@extension("x-schema", typeof "foo")` will emit a JSON schema value for `x-schema`,
+ * whereas `@extension("x-schema", "foo")` will emit the raw code `"foo"`.
+ *
+ * The value will be treated as a raw value if any of the following are true:
+ * 1. The value is a scalar value (e.g. string, number, boolean, etc.)
+ * 2. The value is wrapped in the `Json<Data>` template
+ * 3. The value is provided using the value syntax (e.g. `#{}`, `#[]`)
+ *
+ * For example, `@extension("x-schema", { x: "value" })` will emit a JSON schema value for `x-schema`,
+ * whereas `@extension("x-schema", #{x: "value"})` and `@extension("x-schema", Json<{x: "value"}>)`
+ * will emit the raw JSON code `{x: "value"}`.
  *
  * @param key the name of the keyword of vendor extension, e.g. `x-custom`.
- * @param value the value of the keyword. Will be converted to a schema unless wrapped in `Json<Data>`.
+ * @param value the value of the keyword.
  */
 export type ExtensionDecorator = (
   context: DecoratorContext,
   target: Type,
   key: string,
-  value: Type
+  value: Type | unknown,
 ) => void;
+
+export type TypeSpecJsonSchemaDecorators = {
+  jsonSchema: JsonSchemaDecorator;
+  baseUri: BaseUriDecorator;
+  id: IdDecorator;
+  oneOf: OneOfDecorator;
+  multipleOf: MultipleOfDecorator;
+  contains: ContainsDecorator;
+  minContains: MinContainsDecorator;
+  maxContains: MaxContainsDecorator;
+  uniqueItems: UniqueItemsDecorator;
+  minProperties: MinPropertiesDecorator;
+  maxProperties: MaxPropertiesDecorator;
+  contentEncoding: ContentEncodingDecorator;
+  prefixItems: PrefixItemsDecorator;
+  contentMediaType: ContentMediaTypeDecorator;
+  contentSchema: ContentSchemaDecorator;
+  extension: ExtensionDecorator;
+};

@@ -1,5 +1,5 @@
-import { editor, IDisposable, Uri } from "monaco-editor";
-import { FunctionComponent, useEffect, useMemo, useRef } from "react";
+import { Uri, editor, type IDisposable } from "monaco-editor";
+import { useEffect, useMemo, useRef, type FunctionComponent } from "react";
 
 export interface EditorProps {
   model: editor.IModel;
@@ -28,11 +28,9 @@ export const Editor: FunctionComponent<EditorProps> = ({ model, options, actions
       ...options,
     });
     onMount?.({ editor: editorRef.current });
+    // This needs special handling where we only want to run this effect once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    editor.setTheme(options.theme ?? "typespec");
-  }, [options.theme]);
 
   useEffect(() => {
     const disposables: IDisposable[] = [];
@@ -53,7 +51,7 @@ export const Editor: FunctionComponent<EditorProps> = ({ model, options, actions
   return (
     <div
       className="monaco-editor-container"
-      style={{ width: "100%", height: "100%", overflow: "hidden" }}
+      style={{ width: "100%", height: "100%" }}
       ref={editorContainerRef}
       data-tabster='{"uncontrolled": {}}' // https://github.com/microsoft/tabster/issues/316
     ></div>

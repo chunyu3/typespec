@@ -6,12 +6,8 @@ import { parse, visitChildren } from "../core/parser.js";
 import { IdentifierNode, SyntaxKind } from "../core/types.js";
 import { Server, ServerHost, createServer } from "../server/index.js";
 import { createStringMap } from "../utils/misc.js";
-import {
-  StandardTestLibrary,
-  TestHostOptions,
-  createTestFileSystem,
-  resolveVirtualPath,
-} from "./test-host.js";
+import { StandardTestLibrary, TestHostOptions, createTestFileSystem } from "./test-host.js";
+import { resolveVirtualPath } from "./test-utils.js";
 import { TestFileSystem } from "./types.js";
 
 export interface TestServerHost extends ServerHost, TestFileSystem {
@@ -72,8 +68,8 @@ export async function createTestServerHost(options?: TestHostOptions & { workspa
       }
       diagnostics.set(params.uri, params.diagnostics);
     },
-    log(message) {
-      logMessages.push(message);
+    log(log) {
+      logMessages.push(`[${log.level}] ${log.message}`);
     },
     getURL(path: string) {
       if (path.startsWith("untitled:")) {
@@ -107,7 +103,7 @@ export async function createTestServerHost(options?: TestHostOptions & { workspa
  */
 export function extractCursor(
   sourceWithCursor: string,
-  marker = "┆"
+  marker = "┆",
 ): { source: string; pos: number } {
   const pos = sourceWithCursor.indexOf(marker);
   ok(pos >= 0, "marker not found");
@@ -122,7 +118,7 @@ export function extractCursor(
  */
 export function extractSquiggles(
   sourceWithSquiggles: string,
-  marker = "~~~"
+  marker = "~~~",
 ): { source: string; pos: number; end: number } {
   const { source: sourceWithoutFistSquiggle, pos } = extractCursor(sourceWithSquiggles, marker);
   const { source, pos: end } = extractCursor(sourceWithoutFistSquiggle, marker);

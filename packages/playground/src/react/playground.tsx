@@ -1,29 +1,29 @@
-import { CompilerOptions, Diagnostic } from "@typespec/compiler";
+import type { CompilerOptions, Diagnostic } from "@typespec/compiler";
+import { Pane, SplitPane, useControllableValue } from "@typespec/react-components";
+import "@typespec/react-components/style.css";
 import debounce from "debounce";
 import { KeyCode, KeyMod, MarkerSeverity, Uri, editor } from "monaco-editor";
 import {
-  FunctionComponent,
-  ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type FunctionComponent,
+  type ReactNode,
 } from "react";
 import { CompletionItemTag } from "vscode-languageserver";
+import { resolveVirtualPath } from "../browser-host.js";
 import { EditorCommandBar } from "../editor-command-bar/editor-command-bar.js";
 import { getMonacoRange } from "../services.js";
-import { BrowserHost, PlaygroundSample } from "../types.js";
+import type { BrowserHost, PlaygroundSample } from "../types.js";
 import { PlaygroundContextProvider } from "./context/playground-context.js";
 import { DefaultFooter } from "./default-footer.js";
-import { OnMountData, useMonacoModel } from "./editor.js";
-import { useControllableValue } from "./hooks.js";
+import { useMonacoModel, type OnMountData } from "./editor.js";
 import { OutputView } from "./output-view/output-view.js";
 import style from "./playground.module.css";
 import { ProblemPane } from "./problem-pane/index.js";
-import Pane from "./split-pane/pane.js";
-import { SplitPane } from "./split-pane/split-pane.js";
-import { CompilationState, FileOutputViewer } from "./types.js";
+import type { CompilationState, FileOutputViewer, ProgramViewer } from "./types.js";
 import { TypeSpecEditor } from "./typespec-editor.js";
 
 export interface PlaygroundProps {
@@ -61,10 +61,16 @@ export interface PlaygroundProps {
 
   onFileBug?: () => void;
 
+  /** Additional buttons to show up in the command bar */
+  commandBarButtons?: ReactNode;
+
   /** Playground links */
   links?: PlaygroundLinks;
 
-  /** Custom viewers that enabled for certain emitters. Key of the map is emitter name */
+  /** Custom viewers to view the typespec program */
+  viewers?: ProgramViewer[];
+
+  /** Custom file viewers that enabled for certain emitters. Key of the map is emitter name */
   emitterViewers?: Record<string, FileOutputViewer[]>;
 
   onSave?: (value: PlaygroundSaveData) => void;
@@ -104,20 +110,24 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
   const { host, onSave } = props;
   const editorRef = useRef<editor.IStandaloneCodeEditor | undefined>(undefined);
 
+  useEffect(() => {
+    editor.setTheme(props.editorOptions?.theme ?? "typespec");
+  }, [props.editorOptions?.theme]);
+
   const [selectedEmitter, onSelectedEmitterChange] = useControllableValue(
     props.emitter,
     props.defaultEmitter,
-    props.onEmitterChange
+    props.onEmitterChange,
   );
   const [compilerOptions, onCompilerOptionsChange] = useControllableValue(
     props.compilerOptions,
     props.defaultCompilerOptions ?? {},
-    props.onCompilerOptionsChange
+    props.onCompilerOptionsChange,
   );
   const [selectedSampleName, onSelectedSampleNameChange] = useControllableValue(
     props.sampleName,
     props.defaultSampleName,
-    props.onSampleNameChange
+    props.onSampleNameChange,
   );
   const [content, setContent] = useState(props.defaultContent);
   const isSampleUntouched = useMemo(() => {
@@ -153,11 +163,11 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
         typespecModel.setValue(value);
       }
     },
-    [typespecModel]
+    [typespecModel],
   );
   useEffect(() => {
     updateTypeSpec(props.defaultContent ?? "");
-  }, []);
+  }, [props.defaultContent, updateTypeSpec]);
 
   useEffect(() => {
     if (selectedSampleName && props.samples) {
@@ -172,7 +182,13 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
         }
       }
     }
-  }, [updateTypeSpec, selectedSampleName]);
+  }, [
+    updateTypeSpec,
+    selectedSampleName,
+    props.samples,
+    onSelectedEmitterChange,
+    onCompilerOptionsChange,
+  ]);
 
   useEffect(() => {
     const debouncer = debounce(() => doCompile(), 200);
@@ -207,21 +223,21 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
 
   const formatCode = useCallback(() => {
     void editorRef.current?.getAction("editor.action.formatDocument")?.run();
-  }, [typespecModel]);
+  }, []);
 
   const fileBug = useCallback(async () => {
     if (props.onFileBug) {
       saveCode();
       props.onFileBug();
     }
-  }, [saveCode, typespecModel, props.onFileBug]);
+  }, [props, saveCode]);
 
   const typespecEditorActions = useMemo(
     (): editor.IActionDescriptor[] => [
       // ctrl/cmd+S => save
       { id: "save", label: "Save", keybindings: [KeyMod.CtrlCmd | KeyCode.KeyS], run: saveCode },
     ],
-    [saveCode]
+    [saveCode],
   );
 
   const onTypeSpecEditorMount = useCallback(({ editor }: OnMountData) => {
@@ -229,7 +245,7 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
   }, []);
 
   const [verticalPaneSizes, setVerticalPaneSizes] = useState<(string | number | undefined)[]>(
-    verticalPaneSizesConst.collapsed
+    verticalPaneSizesConst.collapsed,
   );
   const toggleProblemPane = useCallback(() => {
     setVerticalPaneSizes((value) => {
@@ -243,22 +259,32 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
     (sizes: number[]) => {
       setVerticalPaneSizes(sizes);
     },
-    [setVerticalPaneSizes]
+    [setVerticalPaneSizes],
   );
   const handleDiagnosticSelected = useCallback(
     (diagnostic: Diagnostic) => {
       editorRef.current?.setSelection(getMonacoRange(host.compiler, diagnostic.target));
     },
-    [setVerticalPaneSizes]
+    [host.compiler],
   );
 
+  const playgroundContext = useMemo(() => {
+    return {
+      host,
+      setContent: (val: string) => {
+        typespecModel.setValue(val);
+        setContent(val);
+      },
+    };
+  }, [host, setContent, typespecModel]);
+
   return (
-    <PlaygroundContextProvider value={{ host }}>
+    <PlaygroundContextProvider value={playgroundContext}>
       <div className={style["layout"]}>
         <SplitPane sizes={verticalPaneSizes} onChange={onVerticalPaneSizeChange} split="horizontal">
           <Pane>
             <SplitPane initialSizes={["50%", "50%"]}>
-              <Pane>
+              <Pane className={style["edit-pane"]}>
                 <EditorCommandBar
                   host={host}
                   selectedEmitter={selectedEmitter}
@@ -271,6 +297,7 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
                   saveCode={saveCode}
                   formatCode={formatCode}
                   fileBug={props.onFileBug ? fileBug : undefined}
+                  commandBarButtons={props.commandBarButtons}
                   documentationUrl={props.links?.documentationUrl}
                 />
                 <TypeSpecEditor
@@ -284,7 +311,8 @@ export const Playground: FunctionComponent<PlaygroundProps> = (props) => {
                 <OutputView
                   compilationState={compilationState}
                   editorOptions={props.editorOptions}
-                  viewers={props.emitterViewers?.[selectedEmitter]}
+                  viewers={props.viewers}
+                  fileViewers={props.emitterViewers?.[selectedEmitter]}
                 />
               </Pane>
             </SplitPane>
@@ -308,29 +336,29 @@ const verticalPaneSizesConst = {
   collapsed: [undefined, 30],
   expanded: [undefined, 200],
 };
-const outputDir = "./tsp-output";
+const outputDir = resolveVirtualPath("tsp-output");
 
 async function compile(
   host: BrowserHost,
   content: string,
   selectedEmitter: string,
-  options: CompilerOptions
+  options: CompilerOptions,
 ): Promise<CompilationState> {
   await host.writeFile("main.tsp", content);
   await emptyOutputDir(host);
   try {
     const typespecCompiler = host.compiler;
-    const program = await typespecCompiler.compile(host, "main.tsp", {
+    const program = await typespecCompiler.compile(host, resolveVirtualPath("main.tsp"), {
       ...options,
       options: {
         ...options.options,
         [selectedEmitter]: {
           ...options.options?.[selectedEmitter],
-          "emitter-output-dir": "tsp-output",
+          "emitter-output-dir": outputDir,
         },
       },
-      outputDir: "tsp-output",
-      emit: [selectedEmitter],
+      outputDir,
+      emit: selectedEmitter ? [selectedEmitter] : [],
     });
     const outputFiles = await findOutputFiles(host);
     return { program, outputFiles };

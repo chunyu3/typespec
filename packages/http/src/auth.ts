@@ -10,7 +10,6 @@ import {
   HttpService,
   HttpServiceAuthentication,
   OAuth2Flow,
-  OAuth2Scope,
   Oauth2Auth,
 } from "./types.js";
 
@@ -22,7 +21,7 @@ import {
  */
 export function getAuthenticationForOperation(
   program: Program,
-  operation: Operation
+  operation: Operation,
 ): Authentication | undefined {
   const operationAuth = getAuthentication(program, operation);
   if (operationAuth) {
@@ -76,7 +75,7 @@ export function resolveAuthentication(service: HttpService): HttpServiceAuthenti
 
 function gatherAuth(
   authentication: Authentication,
-  serviceSchemes: Record<string, HttpAuth>
+  serviceSchemes: Record<string, HttpAuth>,
 ): {
   newServiceSchemes: Record<string, HttpAuth>;
   authOptions: AuthenticationReference;
@@ -127,7 +126,7 @@ function makeHttpAuthRef(local: HttpAuth, reference: HttpAuth): HttpAuthRef {
 
 function mergeOAuthScopes<Flows extends OAuth2Flow[]>(
   scheme1: Oauth2Auth<Flows>,
-  scheme2: Oauth2Auth<Flows>
+  scheme2: Oauth2Auth<Flows>,
 ): Oauth2Auth<Flows> {
   const flows = deepClone(scheme1.flows);
   flows.forEach((flow1, i) => {
@@ -141,13 +140,12 @@ function mergeOAuthScopes<Flows extends OAuth2Flow[]>(
   };
 }
 
-function setOauth2Scopes<Flows extends OAuth2Flow[]>(
-  scheme: Oauth2Auth<Flows>,
-  scopes: OAuth2Scope[]
-): Oauth2Auth<Flows> {
+function ignoreScopes<Flows extends OAuth2Flow[]>(
+  scheme: Omit<Oauth2Auth<Flows>, "model">,
+): Omit<Oauth2Auth<Flows>, "model"> {
   const flows: Flows = deepClone(scheme.flows);
   flows.forEach((flow) => {
-    flow.scopes = scopes;
+    flow.scopes = [];
   });
   return {
     ...scheme,
@@ -156,8 +154,10 @@ function setOauth2Scopes<Flows extends OAuth2Flow[]>(
 }
 
 function authsAreEqual(scheme1: HttpAuth, scheme2: HttpAuth): boolean {
-  if (scheme1.type === "oauth2" && scheme2.type === "oauth2") {
-    return deepEquals(setOauth2Scopes(scheme1, []), setOauth2Scopes(scheme2, []));
+  const { model: _model1, ...withoutModel1 } = scheme1;
+  const { model: _model2, ...withoutModel2 } = scheme2;
+  if (withoutModel1.type === "oauth2" && withoutModel2.type === "oauth2") {
+    return deepEquals(ignoreScopes(withoutModel1), ignoreScopes(withoutModel2));
   }
-  return deepEquals(scheme1, scheme2);
+  return deepEquals(withoutModel1, withoutModel2);
 }

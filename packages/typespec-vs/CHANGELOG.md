@@ -1,5 +1,47 @@
 # Change Log - typespec-vs
 
+## 0.64.0
+
+No changes, version bump only.
+
+## 0.63.0
+
+No changes, version bump only.
+
+## 0.62.0
+
+No changes, version bump only.
+
+## 0.61.0
+
+No changes, version bump only.
+
+## 0.60.0
+
+No changes, version bump only.
+
+## 0.59.0
+
+### Bug Fixes
+
+- [#4115](https://github.com/microsoft/typespec/pull/4115) Fixed a router bug where paths would sometimes fail to match after a parameter was bound.
+
+
+## 0.58.0
+
+No changes, version bump only.
+
+## 0.57.0
+
+### Features
+
+- [#3461](https://github.com/microsoft/typespec/pull/3461) Support Arm64
+
+
+## 0.56.0
+
+No changes, version bump only.
+
 ## 0.55.0
 
 No changes, version bump only.

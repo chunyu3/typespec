@@ -24,7 +24,7 @@ import { doIO, loadFile, resolveTspMain } from "../utils/misc.js";
 import { serverOptions } from "./constants.js";
 import { FileService } from "./file-service.js";
 import { FileSystemCache } from "./file-system-cache.js";
-import { CompileResult, ServerHost } from "./types.js";
+import { CompileResult, ServerHost, ServerLog } from "./types.js";
 import { UpdateManger } from "./update-manager.js";
 
 /**
@@ -63,7 +63,7 @@ export interface CompileServiceOptions {
   readonly fileService: FileService;
   readonly serverHost: ServerHost;
   readonly compilerHost: CompilerHost;
-  readonly log: (message: string, details?: unknown) => void;
+  readonly log: (log: ServerLog) => void;
 }
 
 export function createCompileService({
@@ -95,17 +95,19 @@ export function createCompileService({
   }
 
   async function compile(
-    document: TextDocument | TextDocumentIdentifier
+    document: TextDocument | TextDocumentIdentifier,
   ): Promise<CompileResult | undefined> {
     const path = await fileService.getPath(document);
     const mainFile = await getMainFileForDocument(path);
     const config = await getConfig(mainFile);
+    log({ level: "debug", message: `config resolved`, detail: config });
 
     const [optionsFromConfig, _] = resolveOptionsFromConfig(config, { cwd: path });
     const options: CompilerOptions = {
       ...optionsFromConfig,
       ...serverOptions,
     };
+    log({ level: "debug", message: `compiler options resolved`, detail: options });
 
     if (!fileService.upToDate(document)) {
       return undefined;
@@ -122,6 +124,10 @@ export function createCompileService({
       if (mainFile !== path && !program.sourceFiles.has(path)) {
         // If the file that changed wasn't imported by anything from the main
         // file, retry using the file itself as the main file.
+        log({
+          level: "debug",
+          message: `target file was not included in compiling, try to compile ${path} as main file directly`,
+        });
         program = await compileProgram(compilerHost, path, options, oldPrograms.get(path));
         oldPrograms.set(path, program);
       }
@@ -166,6 +172,10 @@ export function createCompileService({
     const lookupDir = entrypointStat.isDirectory() ? mainFile : getDirectoryPath(mainFile);
     const configPath = await findTypeSpecConfigPath(compilerHost, lookupDir, true);
     if (!configPath) {
+      log({
+        level: "debug",
+        message: `can't find path with config file, try to use default config`,
+      });
       return { ...defaultConfig, projectRoot: getDirectoryPath(mainFile) };
     }
 
@@ -180,7 +190,7 @@ export function createCompileService({
   }
 
   async function getScript(
-    document: TextDocument | TextDocumentIdentifier
+    document: TextDocument | TextDocumentIdentifier,
   ): Promise<TypeSpecScriptNode> {
     const file = await compilerHost.readFile(await fileService.getPath(document));
     const cached = compilerHost.parseCache?.get(file);
@@ -210,6 +220,7 @@ export function createCompileService({
    */
   async function getMainFileForDocument(path: string) {
     if (path.startsWith("untitled:")) {
+      log({ level: "debug", message: `untitled document treated as its own main file: ${path}` });
       return path;
     }
 
@@ -230,13 +241,17 @@ export function createCompileService({
           pkgPath,
           JSON.parse,
           logMainFileSearchDiagnostic,
-          options
+          options,
         );
         await fileSystemCache.setData(pkgPath, pkg ?? {});
       }
 
       const tspMain = resolveTspMain(pkg);
       if (typeof tspMain === "string") {
+        log({
+          level: "debug",
+          message: `tspMain resolved from package.json (${pkgPath}) as ${tspMain}`,
+        });
         mainFile = tspMain;
       }
 
@@ -245,10 +260,11 @@ export function createCompileService({
         () => compilerHost.stat(candidate),
         candidate,
         logMainFileSearchDiagnostic,
-        options
+        options,
       );
 
       if (stat?.isFile()) {
+        log({ level: "debug", message: `main file found as ${candidate}` });
         return candidate;
       }
 
@@ -256,16 +272,22 @@ export function createCompileService({
       if (parentDir === dir) {
         break;
       }
+      log({
+        level: "debug",
+        message: `main file not found in ${dir}, search in parent directory ${parentDir}`,
+      });
       dir = parentDir;
     }
 
+    log({ level: "debug", message: `reached directory root, using ${path} as main file` });
     return path;
 
     function logMainFileSearchDiagnostic(diagnostic: TypeSpecDiagnostic) {
-      log(
-        `Unexpected diagnostic while looking for main file of ${path}`,
-        formatDiagnostic(diagnostic)
-      );
+      log({
+        level: `error`,
+        message: `Unexpected diagnostic while looking for main file of ${path}`,
+        detail: formatDiagnostic(diagnostic),
+      });
     }
   }
 }

@@ -1,5 +1,17 @@
 import type { DecoratorContext, Model, Namespace, Operation, Type } from "@typespec/compiler";
 
+export interface TagMetadata {
+  readonly [key: string]: unknown;
+  readonly description?: string;
+  readonly externalDocs?: ExternalDocs;
+}
+
+export interface ExternalDocs {
+  readonly [key: string]: unknown;
+  readonly url: string;
+  readonly description?: string;
+}
+
 /**
  * Specify the OpenAPI `operationId` property for this operation.
  *
@@ -13,7 +25,7 @@ import type { DecoratorContext, Model, Namespace, Operation, Type } from "@types
 export type OperationIdDecorator = (
   context: DecoratorContext,
   target: Operation,
-  operationId: string
+  operationId: string,
 ) => void;
 
 /**
@@ -32,7 +44,7 @@ export type ExtensionDecorator = (
   context: DecoratorContext,
   target: Type,
   key: string,
-  value: Type
+  value: Type,
 ) => void;
 
 /**
@@ -64,7 +76,7 @@ export type ExternalDocsDecorator = (
   context: DecoratorContext,
   target: Type,
   url: string,
-  description?: string
+  description?: string,
 ) => void;
 
 /**
@@ -76,5 +88,33 @@ export type ExternalDocsDecorator = (
 export type InfoDecorator = (
   context: DecoratorContext,
   target: Namespace,
-  additionalInfo: Type
+  additionalInfo: Type,
 ) => void;
+
+/**
+ * Specify OpenAPI additional information.
+ *
+ * @param name tag name
+ * @param tagMetadata Additional information
+ * @example
+ * ```typespec
+ * @service()
+ * @tagMetadata("Tag Name", #{description: "Tag description", externalDocs: #{url: "https://example.com", description: "More info.", `x-custom`: "string"}, `x-custom`: "string"})
+ * namespace PetStore {}
+ * ```
+ */
+export type TagMetadataDecorator = (
+  context: DecoratorContext,
+  target: Namespace,
+  name: string,
+  tagMetadata: TagMetadata,
+) => void;
+
+export type TypeSpecOpenAPIDecorators = {
+  operationId: OperationIdDecorator;
+  extension: ExtensionDecorator;
+  defaultResponse: DefaultResponseDecorator;
+  externalDocs: ExternalDocsDecorator;
+  info: InfoDecorator;
+  tagMetadata: TagMetadataDecorator;
+};

@@ -1,9 +1,9 @@
 import { stringify } from "yaml";
 import { TypeSpecConfigFilename } from "../config/config-loader.js";
 import { formatTypeSpec } from "../core/formatter.js";
-import { NodePackage } from "../core/module-resolver.js";
 import { getDirectoryPath, joinPaths } from "../core/path-utils.js";
 import { CompilerHost } from "../core/types.js";
+import { PackageJson } from "../types/package-json.js";
 import { readUrlOrPath, resolveRelativeUrlOrPath } from "../utils/misc.js";
 import { FileTemplatingContext, createFileTemplatingContext, render } from "./file-templating.js";
 import {
@@ -43,9 +43,19 @@ export interface ScaffoldingConfig {
   libraries: InitTemplateLibrarySpec[];
 
   /**
+   * Whether to generate a .gitignore file.
+   */
+  includeGitignore: boolean;
+
+  /**
    * Custom parameters provided in the tempalates.
    */
   parameters: Record<string, any>;
+
+  /**
+   * Selected emitters the tempalates.
+   */
+  emitters: Record<string, any>;
 }
 
 export function normalizeLibrary(library: InitTemplateLibrary): InitTemplateLibrarySpec {
@@ -57,7 +67,7 @@ export function normalizeLibrary(library: InitTemplateLibrary): InitTemplateLibr
 
 export function makeScaffoldingConfig(
   template: InitTemplate,
-  config: Partial<ScaffoldingConfig>
+  config: Partial<ScaffoldingConfig>,
 ): ScaffoldingConfig {
   return {
     template,
@@ -67,6 +77,8 @@ export function makeScaffoldingConfig(
     directory: config.directory ?? "",
     folderName: config.folderName ?? "",
     parameters: config.parameters ?? {},
+    includeGitignore: config.includeGitignore ?? true,
+    emitters: config.emitters ?? {},
     ...config,
   };
 }
@@ -81,6 +93,7 @@ export async function scaffoldNewProject(host: CompilerHost, config: Scaffolding
   await writePackageJson(host, config);
   await writeConfig(host, config);
   await writeMain(host, config);
+  await writeGitignore(host, config);
   await writeFiles(host, config);
 }
 
@@ -97,27 +110,36 @@ async function writePackageJson(host: CompilerHost, config: ScaffoldingConfig) {
   if (isFileSkipGeneration("package.json", config.template.files ?? [])) {
     return;
   }
-  const dependencies: Record<string, string> = {};
+  const peerDependencies: Record<string, string> = {};
+  const devDependencies: Record<string, string> = {};
 
   if (!config.template.skipCompilerPackage) {
-    dependencies["@typespec/compiler"] = "latest";
+    peerDependencies["@typespec/compiler"] = "latest";
+    devDependencies["@typespec/compiler"] = "latest";
   }
 
   for (const library of config.libraries) {
-    dependencies[library.name] = await getLibraryVersion(library);
+    peerDependencies[library.name] = await getPackageVersion(library);
+    devDependencies[library.name] = await getPackageVersion(library);
   }
 
-  const packageJson: NodePackage = {
+  for (const key of Object.keys(config.emitters)) {
+    peerDependencies[key] = await getPackageVersion(config.emitters[key]);
+    devDependencies[key] = await getPackageVersion(config.emitters[key]);
+  }
+
+  const packageJson: PackageJson = {
     name: config.name,
     version: "0.1.0",
     type: "module",
-    dependencies,
+    peerDependencies,
+    devDependencies,
     private: true,
   };
 
   return host.writeFile(
     joinPaths(config.directory, "package.json"),
-    JSON.stringify(packageJson, null, 2)
+    JSON.stringify(packageJson, null, 2),
   );
 }
 
@@ -143,7 +165,20 @@ async function writeConfig(host: CompilerHost, config: ScaffoldingConfig) {
   if (isFileSkipGeneration(TypeSpecConfigFilename, config.template.files ?? [])) {
     return;
   }
-  const content = config.template.config ? stringify(config.template.config) : placeholderConfig;
+
+  let content: string = placeholderConfig;
+  if (config.template.config !== undefined && Object.keys(config.template.config).length > 0) {
+    content = stringify(config.template.config);
+  } else if (Object.keys(config.emitters).length > 0) {
+    const emitters = Object.keys(config.emitters);
+    const options = Object.fromEntries(
+      Object.entries(config.emitters).map(([key, emitter]) => [key, emitter.options]),
+    );
+    content = stringify({
+      emit: emitters,
+      options: Object.keys(options).length > 0 ? options : undefined,
+    });
+  }
   return host.writeFile(joinPaths(config.directory, TypeSpecConfigFilename), content);
 }
 
@@ -154,13 +189,32 @@ async function writeMain(host: CompilerHost, config: ScaffoldingConfig) {
   const dependencies: Record<string, string> = {};
 
   for (const library of config.libraries) {
-    dependencies[library.name] = await getLibraryVersion(library);
+    dependencies[library.name] = await getPackageVersion(library);
   }
 
   const lines = [...config.libraries.map((x) => `import "${x.name}";`), ""];
   const content = lines.join("\n");
 
   return host.writeFile(joinPaths(config.directory, "main.tsp"), await formatTypeSpec(content));
+}
+
+const defaultGitignore = `
+# MacOS
+.DS_Store
+
+# Default TypeSpec output
+tsp-output/
+dist/
+
+# Dependency directories
+node_modules/
+`.trim();
+async function writeGitignore(host: CompilerHost, config: ScaffoldingConfig) {
+  if (!config.includeGitignore || isFileSkipGeneration(".gitignore", config.template.files ?? [])) {
+    return;
+  }
+
+  return host.writeFile(joinPaths(config.directory, ".gitignore"), defaultGitignore);
 }
 
 async function writeFiles(host: CompilerHost, config: ScaffoldingConfig) {
@@ -179,7 +233,7 @@ async function writeFile(
   host: CompilerHost,
   config: ScaffoldingConfig,
   context: FileTemplatingContext,
-  file: InitTemplateFile
+  file: InitTemplateFile,
 ) {
   const baseDir = config.baseUri + "/";
   const template = await readUrlOrPath(host, resolveRelativeUrlOrPath(baseDir, file.path));
@@ -190,7 +244,7 @@ async function writeFile(
   return host.writeFile(joinPaths(config.directory, file.destination), content);
 }
 
-async function getLibraryVersion(library: InitTemplateLibrarySpec): Promise<string> {
+async function getPackageVersion(packageInfo: { version?: string }): Promise<string> {
   // TODO: Resolve 'latest' version from npm, issue #1919
-  return library.version ?? "latest";
+  return packageInfo.version ?? "latest";
 }

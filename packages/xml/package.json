@@ -1,6 +1,6 @@
 {
   "name": "@typespec/xml",
-  "version": "0.55.0",
+  "version": "0.64.0",
   "author": "Microsoft Corporation",
   "description": "TypeSpec library providing xml bindings",
   "homepage": "https://typespec.io",
@@ -20,7 +20,10 @@
   "main": "dist/src/index.js",
   "tspMain": "lib/main.tsp",
   "exports": {
-    ".": "./dist/src/index.js",
+    ".": {
+      "typespec": "./lib/main.tsp",
+      "default": "./dist/src/index.js"
+    },
     "./testing": "./dist/src/testing/index.js"
   },
   "engines": {
@@ -28,7 +31,7 @@
   },
   "scripts": {
     "clean": "rimraf ./dist ./temp",
-    "build": "npm run gen-extern-signature && tsc -p . && npm run lint-typespec-library",
+    "build": "npm run gen-extern-signature && tsc -p . && npm run lint-typespec-library && pnpm api-extractor",
     "watch": "tsc -p . --watch",
     "gen-extern-signature": "tspd --enable-experimental gen-extern-signature .",
     "lint-typespec-library": "tsp compile . --warn-as-error --import @typespec/library-linter --no-emit",
@@ -38,7 +41,8 @@
     "test-official": "vitest run --coverage --reporter=junit --reporter=default --no-file-parallelism",
     "lint": "eslint . --ext .ts --max-warnings=0",
     "lint:fix": "eslint . --fix --ext .ts",
-    "regen-docs": "tspd doc .  --enable-experimental  --output-dir ../../docs/libraries/xml/reference"
+    "regen-docs": "tspd doc .  --enable-experimental  --output-dir ../../website/src/content/docs/docs/libraries/xml/reference",
+    "api-extractor": "api-extractor run --local --verbose"
   },
   "files": [
     "lib/*.tsp",
@@ -49,15 +53,15 @@
     "@typespec/compiler": "workspace:~"
   },
   "devDependencies": {
-    "@types/node": "~18.11.19",
+    "@types/node": "~22.7.9",
     "@typespec/compiler": "workspace:~",
     "@typespec/library-linter": "workspace:~",
     "@typespec/tspd": "workspace:~",
-    "@vitest/coverage-v8": "^1.5.0",
-    "@vitest/ui": "^1.5.0",
-    "c8": "^9.1.0",
-    "rimraf": "~5.0.5",
-    "typescript": "~5.4.5",
-    "vitest": "^1.5.0"
+    "@vitest/coverage-v8": "^2.1.5",
+    "@vitest/ui": "^2.1.2",
+    "c8": "^10.1.2",
+    "rimraf": "~6.0.1",
+    "typescript": "~5.6.3",
+    "vitest": "^2.1.5"
   }
 }

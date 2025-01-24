@@ -2,7 +2,7 @@ import { ModelProperty, Operation } from "@typespec/compiler";
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { isSharedRoute } from "@typespec/http";
 import { deepStrictEqual, strictEqual } from "assert";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   compileOperations,
   createRestTestRunner,
@@ -23,7 +23,7 @@ describe("rest: routes", () => {
       @action("actionTwo")
       @actionSeparator(":")
       op separatorRoute(): {};
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -53,7 +53,7 @@ describe("rest: routes", () => {
         @action
         op ActionThree(...ThingId, @body bodyParam: string): string;
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -77,7 +77,7 @@ describe("rest: routes", () => {
         @action("")
         @put op MyAction(...ThingId): string;
       }
-      `
+      `,
     );
     expectDiagnostics(diagnostics, [
       {
@@ -126,7 +126,7 @@ describe("rest: routes", () => {
           @post CreateSubthing(...KeysOf<Thing>, ...KeysOf<Subthing>): string;
         }
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -165,7 +165,7 @@ describe("rest: routes", () => {
           ...ThingId
         ): string;
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -346,7 +346,7 @@ describe("rest: routes", () => {
             };
           },
         },
-      }
+      },
     );
 
     deepStrictEqual(routes, [{ verb: "get", path: "/things/{foo}/subthings/bar", params: [] }]);
@@ -364,7 +364,7 @@ describe("rest: routes", () => {
           @path thingId: string
         ): string;
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -398,7 +398,7 @@ describe("rest: routes", () => {
           @path thingId: string
         ): string;
       }
-      `
+      `,
     );
     deepStrictEqual(routes, [
       { verb: "put", path: "/things/{thingId}:customAction1", params: ["thingId"] },
@@ -419,14 +419,11 @@ describe("rest: routes", () => {
           @path thingId: string
         ): string;
       }
-      `
+      `,
     );
-    strictEqual(diagnostics.length, 1);
-    strictEqual(diagnostics[0].code, "invalid-argument");
-    strictEqual(
-      diagnostics[0].message,
-      `Argument '"x"' is not assignable to parameter of type 'valueof "/" | ":" | "/:"'`
-    );
+    expectDiagnostics(diagnostics, {
+      code: "invalid-argument",
+    });
   });
 
   it("skips templated operations", async () => {
@@ -440,7 +437,7 @@ describe("rest: routes", () => {
         @route("/{thingId}")
         @put op CreateThing(@path thingId: string): string;
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -494,7 +491,7 @@ describe("rest: routes", () => {
       @sharedRoute
       @collectionAction(Thing, "goodCollection")
       op goodCollectionAction(): {};
-      `
+      `,
     );
 
     expectDiagnostics(diagnostics, [
@@ -516,11 +513,37 @@ describe("rest: routes", () => {
       `
       @autoRoute 
       op test(@path("custom-name") @segment("params") myParam: string): void;
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
       { verb: "get", path: "/params/{custom-name}", params: ["custom-name"] },
     ]);
+  });
+});
+
+describe("uri template", () => {
+  async function getOp(code: string) {
+    const ops = await getOperations(code);
+    return ops[0];
+  }
+
+  describe("build uriTemplate from parameter", () => {
+    it.each([
+      ["@path one: string", "/foo/{one}"],
+      ["@path(#{allowReserved: true}) one: string", "/foo/{+one}"],
+      ["@path(#{explode: true}) one: string", "/foo/{one*}"],
+      [`@path(#{style: "matrix"}) one: string`, "/foo/{;one}"],
+      [`@path(#{style: "label"}) one: string`, "/foo/{.one}"],
+      [`@path(#{style: "fragment"}) one: string`, "/foo/{#one}"],
+      [`@path(#{style: "path"}) one: string`, "/foo/{/one}"],
+      ["@path(#{allowReserved: true, explode: true}) one: string", "/foo/{+one*}"],
+      ["@query one: string", "/foo{?one}"],
+      // cspell:ignore Atwo
+      [`@query("one:two") one: string`, "/foo{?one%3Atwo}"],
+    ])("%s -> %s", async (param, expectedUri) => {
+      const op = await getOp(`@route("/foo") interface Test {@autoRoute op foo(${param}): void;}`);
+      expect(op.uriTemplate).toEqual(expectedUri);
+    });
   });
 });

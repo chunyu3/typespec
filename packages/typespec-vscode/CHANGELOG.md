@@ -1,5 +1,110 @@
 # Change Log - typespec-vscode
 
+## 0.64.0
+
+### Bug Fixes
+
+- [#5413](https://github.com/microsoft/typespec/pull/5413) Do not start TypeSpec Language Server when there is no workspace opened
+- [#5131](https://github.com/microsoft/typespec/pull/5131) Support 'See Document' quick action to view the details of linter rules
+- [#5428](https://github.com/microsoft/typespec/pull/5428) improve console output when tsp-server not found
+
+### Features
+
+- [#5312](https://github.com/microsoft/typespec/pull/5312) integrate client SDK generation
+- [#5314](https://github.com/microsoft/typespec/pull/5314) Rename vscode extension from "TypeSpec for VS Code" to "TypeSpec"
+- [#5594](https://github.com/microsoft/typespec/pull/5594) Support Emitters section in Init Template when creating TypeSpec project in vscode
+- [#5294](https://github.com/microsoft/typespec/pull/5294) Support "Create TypeSpec Project" in vscode command and EXPLORER when no folder opened
+Add Setting "typespec.initTemplatesUrls" where user can configure additional template to use to create TypeSpec project
+example:
+```
+{
+  "typespec.initTemplatesUrls": [
+    {
+      "name": "displayName",
+      "url": "https://urlToTheFileContainsTemplates"
+    }],
+}
+```
+Support "Install TypeSpec Compiler/CLI globally" in vscode command to install TypeSpec compiler globally easily
+
+
+## 0.63.0
+
+No changes, version bump only.
+
+## 0.62.0
+
+### Bug Fixes
+
+- [#4912](https://github.com/microsoft/typespec/pull/4912) Fix the issue when Typespec Language Server can't be restarted when the server wasn't running before
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+### Features
+
+- [#4790](https://github.com/microsoft/typespec/pull/4790) Support completion for tspconfig.yaml file in vscode
+- [#4737](https://github.com/microsoft/typespec/pull/4737) Add basic snippets for typespec
+- [#4912](https://github.com/microsoft/typespec/pull/4912) TypeSpec Language Server would be restarted with new settings when setting "typespec.tsp-server.path" is changed
+
+
+## 0.61.0
+
+### Bug Fixes
+
+- [#4430](https://github.com/microsoft/typespec/pull/4430) Use "shell" when spawning execution of .cmd file(i.e. tsp-server.cmd) in windows
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+### Features
+
+- [#4330](https://github.com/microsoft/typespec/pull/4330) Support Compile Task and Watch Task in vscode.
+- [#4498](https://github.com/microsoft/typespec/pull/4498) Make extension web compatible with minimal functionality
+
+
+## 0.60.0
+
+No changes, version bump only.
+
+## 0.59.0
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+
+## 0.58.0
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+
+## 0.57.0
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+### Features
+
+- [#3533](https://github.com/microsoft/typespec/pull/3533) Enhance logging and trace
+ 1. Support "Developer: Set Log Level..." command to filter logs in TypeSpec output channel
+ 2. Add "typespecLanguageServer.trace.server" config for whether and how to send the traces from TypeSpec language server to client. (It still depends on client to decide whether to show these traces based on the configured Log Level.)
+ 3. More logs and traces are added for diagnostic and troubleshooting
+- [#3385](https://github.com/microsoft/typespec/pull/3385) Add 'TypeSpec: Show Output Channel' command in VSCode extension
+
+
+## 0.56.0
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+
 ## 0.55.0
 
 ### Bump dependencies

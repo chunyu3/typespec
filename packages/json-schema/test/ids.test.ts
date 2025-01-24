@@ -4,15 +4,15 @@ import { describe, it } from "vitest";
 import { emitSchema, emitSchemaWithDiagnostics } from "./utils.js";
 
 describe("implicit ids", () => {
-  it("when bundling, sets the id based on the declaration name", async () => {
+  it("when bundling, sets the id based on the declaration name and file path", async () => {
     const schemas = await emitSchema(
       `
         model Foo {}
         `,
-      { bundleId: "types.json" }
+      { bundleId: "types.json" },
     );
 
-    assert.strictEqual(schemas["types.json"].$defs.Foo.$id, "Foo");
+    assert.strictEqual(schemas["types.json"].$defs.Foo.$id, "Foo.json");
   });
 
   it("when not bundling, sets the id based on the declaration name and file path", async () => {
@@ -87,7 +87,7 @@ describe("explicit ids with $id", () => {
         model Foo {}
       }
       `,
-      { bundleId: "types.json" }
+      { bundleId: "types.json" },
     );
 
     assert.strictEqual(schemas["types.json"].$defs.Foo.$id, "http://example.org/bar");

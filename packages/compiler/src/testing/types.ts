@@ -9,6 +9,7 @@ export interface TestFileSystem {
   addJsFile(path: string, contents: Record<string, any>): void;
   addRealTypeSpecFile(path: string, realPath: string): Promise<void>;
   addRealJsFile(path: string, realPath: string): Promise<void>;
+  addRealFolder(path: string, realPath: string): Promise<void>;
   addTypeSpecLibrary(testLibrary: TypeSpecTestLibrary): Promise<void>;
 }
 
@@ -21,7 +22,7 @@ export interface TestHost extends TestFileSystem {
   diagnose(main: string, options?: CompilerOptions): Promise<readonly Diagnostic[]>;
   compileAndDiagnose(
     main: string,
-    options?: CompilerOptions
+    options?: CompilerOptions,
   ): Promise<[Record<string, Type>, readonly Diagnostic[]]>;
 }
 
@@ -40,7 +41,7 @@ export interface TypeSpecTestLibraryInit {
   typespecFileFolder?: string;
 
   /**
-   * JS files folder. @default "dist"
+   * JS files folder. @default "dist/src"
    */
   jsFileFolder?: string;
 }
@@ -58,7 +59,7 @@ export interface TestHostConfig {
 export class TestHostError extends Error {
   constructor(
     message: string,
-    public code: "ENOENT" | "ERR_MODULE_NOT_FOUND"
+    public code: "ENOENT" | "ERR_MODULE_NOT_FOUND",
   ) {
     super(message);
   }
@@ -88,6 +89,6 @@ export interface BasicTestRunner {
    */
   compileAndDiagnose(
     code: string,
-    options?: CompilerOptions
+    options?: CompilerOptions,
   ): Promise<[Record<string, Type>, readonly Diagnostic[]]>;
 }

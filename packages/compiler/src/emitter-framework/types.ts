@@ -1,4 +1,4 @@
-import {
+import type {
   Enum,
   Interface,
   IntrinsicType,
@@ -12,7 +12,7 @@ import {
   Union,
 } from "../core/index.js";
 import { Placeholder } from "./placeholder.js";
-import { TypeEmitter } from "./type-emitter.js";
+import type { TypeEmitter } from "./type-emitter.js";
 
 type AssetEmitterOptions<TOptions extends object> = {
   noEmit: boolean;
@@ -114,7 +114,7 @@ export class Declaration<T> extends EmitterResult {
   constructor(
     public name: string,
     public scope: Scope<T>,
-    public value: T | Placeholder<T>
+    public value: T | Placeholder<T>,
   ) {
     if (value instanceof Placeholder) {
       value.onValue((v) => (this.value = v));

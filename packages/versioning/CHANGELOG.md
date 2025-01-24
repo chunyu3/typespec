@@ -1,5 +1,94 @@
 # Change Log - @typespec/versioning
 
+## 0.64.0
+
+No changes, version bump only.
+
+## 0.63.0
+
+### Bug Fixes
+
+- [#5262](https://github.com/microsoft/typespec/pull/5262) Fixes diagnostics for @typeChangedFrom to properly detect when an incompatible version is referenced inside of a template, union, or tuple.
+
+
+## 0.62.0
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+
+## 0.61.0
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+
+## 0.60.1
+
+### Bug Fixes
+
+- [#4408](https://github.com/microsoft/typespec/pull/4408) Fixes versioning when using versioned named union variants
+
+
+## 0.60.0
+
+### Bug Fixes
+
+- [#4145](https://github.com/microsoft/typespec/pull/4145) Fix error when trying to reference types from another sub namespace of a versioned namespace
+- [#4179](https://github.com/microsoft/typespec/pull/4179) Add validation to make sure operation params reference models available in the current version
+- [#4179](https://github.com/microsoft/typespec/pull/4179) Add validation to make sure types referencing array in union types have compatible versioning.
+
+### Features
+
+- [#4139](https://github.com/microsoft/typespec/pull/4139) Internals: Migrate to new api for declaring decorator implementation
+
+
+## 0.59.0
+
+### Bug Fixes
+
+- [#3911](https://github.com/microsoft/typespec/pull/3911) Allow spreading a model that has props added in previous version
+- [#3951](https://github.com/microsoft/typespec/pull/3951) Fixes issue where spreading a versioned model as a parameter to an incompatible versioned operation would cause the compiler to crash.
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+
+## 0.58.0
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+
+## 0.57.0
+
+### Bug Fixes
+
+- [#3292](https://github.com/microsoft/typespec/pull/3292) Add `@madeRequired` decorator
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Update to support new value types
+- [#3409](https://github.com/microsoft/typespec/pull/3409) Using `@removed` on member types and `@added` on containing type could result in errors
+- [#3255](https://github.com/microsoft/typespec/pull/3255) If a property were marked with @added on a later version, the logic that said it was originally added on the first version was erroneously removed, resulting in incorrect projections.
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+
+## 0.56.0
+
+### Bug Fixes
+
+- [#3264](https://github.com/microsoft/typespec/pull/3264) Fix crash when `@service` appears inside a versioned namespace
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+
 ## 0.55.0
 
 ### Bump dependencies

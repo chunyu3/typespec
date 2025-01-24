@@ -1,4 +1,5 @@
-import "../dist/src/lib/intrinsic-decorators.js";
+import "../dist/src/lib/intrinsic/tsp-index.js";
+import "./prototypes.tsp";
 
 // This file contains all the intrinsic types of typespec. Everything here will always be loaded
 namespace TypeSpec;
@@ -70,12 +71,12 @@ scalar uint8 extends uint16;
 scalar safeint extends int64;
 
 /**
- * A 32 bit floating point number. (`±1.5 x 10^−45` to `±3.4 x 10^38`)
+ * A 64 bit floating point number. (`±5.0 × 10^−324` to `±1.7 × 10^308`)
  */
 scalar float64 extends float;
 
 /**
- * A 32 bit floating point number. (`±5.0 × 10^−324` to `±1.7 × 10^308`)
+ * A 32 bit floating point number. (`±1.5 x 10^−45` to `±3.4 x 10^38`)
  */
 scalar float32 extends float64;
 
@@ -98,27 +99,77 @@ scalar string;
 /**
  * A date on a calendar without a time zone, e.g. "April 10th"
  */
-scalar plainDate;
+scalar plainDate {
+  /**
+   * Create a plain date from an ISO 8601 string.
+   * @example
+   *
+   * ```tsp
+   * const time = plainTime.fromISO("2024-05-06");
+   * ```
+   */
+  init fromISO(value: string);
+}
 
 /**
  * A time on a clock without a time zone, e.g. "3:00 am"
  */
-scalar plainTime;
+scalar plainTime {
+  /**
+   * Create a plain time from an ISO 8601 string.
+   * @example
+   *
+   * ```tsp
+   * const time = plainTime.fromISO("12:34");
+   * ```
+   */
+  init fromISO(value: string);
+}
 
 /**
  * An instant in coordinated universal time (UTC)"
  */
-scalar utcDateTime;
+scalar utcDateTime {
+  /**
+   * Create a date from an ISO 8601 string.
+   * @example
+   *
+   * ```tsp
+   * const time = utcDateTime.fromISO("2024-05-06T12:20-12Z");
+   * ```
+   */
+  init fromISO(value: string);
+}
 
 /**
  * A date and time in a particular time zone, e.g. "April 10th at 3:00am in PST"
  */
-scalar offsetDateTime;
+scalar offsetDateTime {
+  /**
+   * Create a date from an ISO 8601 string.
+   * @example
+   *
+   * ```tsp
+   * const time = offsetDateTime.fromISO("2024-05-06T12:20-12-0700");
+   * ```
+   */
+  init fromISO(value: string);
+}
 
 /**
  * A duration/time period. e.g 5s, 10h
  */
-scalar duration;
+scalar duration {
+  /**
+   * Create a duration from an ISO 8601 string.
+   * @example
+   *
+   * ```tsp
+   * const time = duration.fromISO("P1Y1D");
+   * ```
+   */
+  init fromISO(value: string);
+}
 
 /**
  * Boolean with `true` and `false` values.

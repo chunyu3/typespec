@@ -1,11 +1,13 @@
 import { Operation } from "@typespec/compiler";
 import { expectDiagnosticEmpty, expectDiagnostics } from "@typespec/compiler/testing";
-import { deepStrictEqual, strictEqual } from "assert";
-import { describe, it } from "vitest";
-import { HttpOperation, getRoutePath } from "../src/index.js";
+import { deepStrictEqual, ok, strictEqual } from "assert";
+import { describe, expect, it } from "vitest";
+import { PathOptions } from "../generated-defs/TypeSpec.Http.js";
+import { HttpOperation, HttpOperationParameter, getRoutePath } from "../src/index.js";
 import {
   compileOperations,
   createHttpTestRunner,
+  diagnoseOperations,
   getOperations,
   getRoutesFor,
 } from "./test-host.js";
@@ -66,7 +68,7 @@ describe("http: routes", () => {
       namespace Foo {
         @get op index(): void;
       }
-      `
+      `,
         );
 
         deepStrictEqual(routes, []);
@@ -80,7 +82,7 @@ describe("http: routes", () => {
           @service({title: "My Service"})
           namespace MyService;
           @get op index(): void;
-          `
+          `,
         );
 
         expectRouteIncluded(routes, ["/"]);
@@ -97,7 +99,7 @@ describe("http: routes", () => {
             @route("/included")
             @get op included(): void;
           }
-          `
+          `,
         );
         expectRouteIncluded(routes, ["/included"]);
       });
@@ -109,7 +111,7 @@ describe("http: routes", () => {
           namespace MyService;
           interface Foo {
             @get index(): void;
-          }`
+          }`,
         );
 
         expectRouteIncluded(routes, ["/"]);
@@ -124,7 +126,7 @@ describe("http: routes", () => {
           namespace MyArea{
             @get op index(): void;
           }
-          `
+          `,
         );
 
         expectRouteIncluded(routes, ["/"]);
@@ -143,9 +145,35 @@ describe("http: routes", () => {
             @route("/not-included")
             @get op notIncluded(): void;
           }
-          `
+          `,
         );
         expectRouteIncluded(routes, ["/included"]);
+      });
+    });
+  });
+
+  describe("@route path parameters mapping", () => {
+    it("maps route interpolated params to the operation param", async () => {
+      const routes = await getRoutesFor(
+        `@route("/foo/{myParam}") op test(@path myParam: string): void;`,
+      );
+      deepStrictEqual(routes, [{ verb: "get", path: "/foo/{myParam}", params: ["myParam"] }]);
+    });
+
+    it("maps route interpolated params to the operation param when operation spread items", async () => {
+      const routes = await getRoutesFor(
+        `@route("/foo/{myParam}") op test(@path myParam: string, ...Record<string>): void;`,
+      );
+      deepStrictEqual(routes, [{ verb: "post", path: "/foo/{myParam}", params: ["myParam"] }]);
+    });
+
+    it("emit diagnostic if interpolated param is missing in param list", async () => {
+      const diagnostics = await diagnoseOperations(
+        `@route("/foo/{myParam}/") op test(@path other: string): void;`,
+      );
+      expectDiagnostics(diagnostics, {
+        code: "@typespec/http/missing-uri-param",
+        message: "Route reference parameter 'myParam' but wasn't found in operation parameters",
       });
     });
   });
@@ -165,7 +193,7 @@ describe("http: routes", () => {
 
     it("respect the name provided by @path argument when being explicit in the route", async () => {
       const routes = await getRoutesFor(
-        `@route("/foo/{custom-name}") op test(@path("custom-name") myParam: string): void;`
+        `@route("/foo/{custom-name}") op test(@path("custom-name") myParam: string): void;`,
       );
 
       deepStrictEqual(routes, [
@@ -192,7 +220,7 @@ describe("http: routes", () => {
           @post op CreateSubthing(@path thingId: string, @path subthingId: string): string;
         }
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -225,7 +253,7 @@ describe("http: routes", () => {
           @post CreateSubthing(@path thingId: string, @path subthingId: string): string;
         }
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -247,10 +275,33 @@ describe("http: routes", () => {
       interface Foo {
         @get @route("") index(): {};
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [{ verb: "get", path: "/", params: [] }]);
+  });
+
+  it("keeps trailing / at the end of the route", async () => {
+    const routes = await getRoutesFor(
+      `
+      @route("/foo/") op index(): void;
+      `,
+    );
+
+    deepStrictEqual(routes, [{ verb: "get", path: "/foo/", params: [] }]);
+  });
+
+  it("merge trailing and leading / when combining container path", async () => {
+    const routes = await getRoutesFor(
+      `
+      @route("/foo/")
+      interface Foo {
+        @route("/bar/") op index(): void;
+      }
+      `,
+    );
+
+    deepStrictEqual(routes, [{ verb: "get", path: "/foo/bar/", params: [] }]);
   });
 
   it("join / route segments correctly", async () => {
@@ -260,7 +311,7 @@ describe("http: routes", () => {
       interface Foo {
         @get @route("/") index(): {};
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [{ verb: "get", path: "/", params: [] }]);
@@ -272,7 +323,7 @@ describe("http: routes", () => {
       @get
       @route(":action")
       op colonRoute(): {};
-      `
+      `,
     );
 
     deepStrictEqual(routes, [{ verb: "get", path: "/:action", params: [] }]);
@@ -400,7 +451,7 @@ describe("http: routes", () => {
         @route("/{thingId}")
         @put op CreateThing(@path thingId: string): string;
       }
-      `
+      `,
     );
 
     deepStrictEqual(routes, [
@@ -455,6 +506,171 @@ describe("http: routes", () => {
 
       strictEqual(getRoutePath(runner.program, get1)?.shared, true);
       strictEqual(getRoutePath(runner.program, get2)?.shared, false);
+    });
+  });
+});
+
+describe("uri template", () => {
+  async function getOp(code: string) {
+    const ops = await getOperations(code);
+    return ops[0];
+  }
+  describe("extract implicit parameters", () => {
+    async function getParameter(code: string, name: string) {
+      const op = await getOp(code);
+      const param = op.parameters.parameters.find((x) => x.name === name);
+      ok(param);
+      expect(param.name).toEqual(name);
+      return param;
+    }
+
+    function expectPathParameter(param: HttpOperationParameter, expected: PathOptions) {
+      strictEqual(param.type, "path");
+      const { style, explode, allowReserved } = param;
+      expect({ style, explode, allowReserved }).toEqual(expected);
+    }
+
+    it("extract simple path parameter", async () => {
+      const param = await getParameter(`@route("/bar/{foo}") op foo(foo: string): void;`, "foo");
+      expectPathParameter(param, { style: "simple", allowReserved: false, explode: false });
+    });
+
+    it("+ operator map to allowReserved", async () => {
+      const param = await getParameter(`@route("/bar/{+foo}") op foo(foo: string): void;`, "foo");
+      expectPathParameter(param, { style: "simple", allowReserved: true, explode: false });
+    });
+
+    it("+ operator map to allowReserved even with @path set", async () => {
+      const param = await getParameter(
+        `@route("/bar/{+foo}") op foo(@path foo: string): void;`,
+        "foo",
+      );
+      expectPathParameter(param, { style: "simple", allowReserved: true, explode: false });
+    });
+
+    it.each([
+      [";", "matrix"],
+      ["#", "fragment"],
+      [".", "label"],
+      ["/", "path"],
+    ] as const)("%s map to style: %s", async (operator, style) => {
+      const param = await getParameter(
+        `@route("/bar/{${operator}foo}") op foo(foo: string): void;`,
+        "foo",
+      );
+      expectPathParameter(param, { style, allowReserved: false, explode: false });
+    });
+
+    function expectQueryParameter(param: HttpOperationParameter, expected: PathOptions) {
+      strictEqual(param.type, "query");
+      const { explode } = param;
+      expect({ explode }).toEqual(expected);
+    }
+
+    it("extract simple query parameter", async () => {
+      const param = await getParameter(`@route("/bar{?foo}") op foo(foo: string): void;`, "foo");
+      expectQueryParameter(param, { explode: false });
+    });
+
+    it("extract explode query parameter", async () => {
+      const param = await getParameter(`@route("/bar{?foo*}") op foo(foo: string): void;`, "foo");
+      expectQueryParameter(param, { explode: true });
+    });
+
+    it("extract simple query continuation parameter", async () => {
+      const param = await getParameter(
+        `@route("/bar?fixed=yes{&foo}") op foo(foo: string): void;`,
+        "foo",
+      );
+      expectQueryParameter(param, { explode: false });
+    });
+  });
+
+  describe("build uriTemplate from parameter", () => {
+    it.each([
+      ["@path one: string", "/foo/{one}"],
+      ["@path(#{allowReserved: true}) one: string", "/foo/{+one}"],
+      ["@path(#{explode: true}) one: string", "/foo/{one*}"],
+      [`@path(#{style: "matrix"}) one: string`, "/foo/{;one}"],
+      [`@path(#{style: "label"}) one: string`, "/foo/{.one}"],
+      [`@path(#{style: "fragment"}) one: string`, "/foo/{#one}"],
+      [`@path(#{style: "path"}) one: string`, "/foo/{/one}"],
+      ["@path(#{allowReserved: true, explode: true}) one: string", "/foo/{+one*}"],
+      ["@query one: string", "/foo{?one}"],
+      ["@query(#{explode: true}) one: string", "/foo{?one*}"],
+      [
+        "@query(#{explode: true}) one: string, @query(#{explode: true}) two: string",
+        "/foo{?one*,two*}",
+      ],
+
+      // cspell:ignore Atwo
+      [`@query("one:two") one: string`, "/foo{?one%3Atwo}"],
+    ])("%s -> %s", async (param, expectedUri) => {
+      const op = await getOp(`@route("/foo") op foo(${param}): void;`);
+      expect(op.uriTemplate).toEqual(expectedUri);
+    });
+  });
+
+  it("emit diagnostic when annotating a path parameter with @query", async () => {
+    const diagnostics = await diagnoseOperations(
+      `@route("/bar/{foo}") op foo(@query foo: string): void;`,
+    );
+    expectDiagnostics(diagnostics, {
+      code: "@typespec/http/incompatible-uri-param",
+      message: "Parameter 'foo' is defined in the uri as a path but is annotated as a query.",
+    });
+  });
+
+  it("emit diagnostic when annotating a query parameter with @path", async () => {
+    const diagnostics = await diagnoseOperations(
+      `@route("/bar/{?foo}") op foo(@path foo: string): void;`,
+    );
+    expectDiagnostics(diagnostics, {
+      code: "@typespec/http/incompatible-uri-param",
+      message: "Parameter 'foo' is defined in the uri as a query but is annotated as a path.",
+    });
+  });
+
+  it("emit diagnostic when annotating a query continuation parameter with @path", async () => {
+    const diagnostics = await diagnoseOperations(
+      `@route("/bar/?bar=def{&foo}") op foo(@path foo: string): void;`,
+    );
+    expectDiagnostics(diagnostics, {
+      code: "@typespec/http/incompatible-uri-param",
+      message: "Parameter 'foo' is defined in the uri as a query but is annotated as a path.",
+    });
+  });
+
+  describe("emit diagnostic if using any of the path options when parameter is already defined in the uri template", () => {
+    it.each([
+      "#{ allowReserved: true }",
+      "#{ explode: true }",
+      `#{ style: "label" }`,
+      `#{ style: "matrix" }`,
+      `#{ style: "fragment" }`,
+      `#{ style: "path" }`,
+    ])("%s", async (options) => {
+      const diagnostics = await diagnoseOperations(
+        `@route("/bar/{foo}") op foo(@path(${options}) foo: string): void;`,
+      );
+      expectDiagnostics(diagnostics, {
+        code: "@typespec/http/use-uri-template",
+        message:
+          "Parameter 'foo' is already defined in the uri template. Explode, style and allowReserved property must be defined in the uri template as described by RFC 6570.",
+      });
+    });
+  });
+
+  describe("emit diagnostic if using any of the query options when parameter is already defined in the uri template", () => {
+    it.each(["#{ explode: true }"])("%s", async (options) => {
+      const diagnostics = await diagnoseOperations(
+        `@route("/bar{?foo}") op foo(@query(${options}) foo: string): void;`,
+      );
+      expectDiagnostics(diagnostics, {
+        code: "@typespec/http/use-uri-template",
+        message:
+          "Parameter 'foo' is already defined in the uri template. Explode, style and allowReserved property must be defined in the uri template as described by RFC 6570.",
+      });
     });
   });
 });

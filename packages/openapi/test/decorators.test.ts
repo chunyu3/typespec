@@ -2,7 +2,14 @@ import { Namespace } from "@typespec/compiler";
 import { BasicTestRunner, expectDiagnostics } from "@typespec/compiler/testing";
 import { deepStrictEqual } from "assert";
 import { beforeEach, describe, it } from "vitest";
-import { getExtensions, getExternalDocs, getInfo, resolveInfo } from "../src/decorators.js";
+import {
+  getExtensions,
+  getExternalDocs,
+  getInfo,
+  getTagsMetadata,
+  resolveInfo,
+  setInfo,
+} from "../src/decorators.js";
 import { createOpenAPITestRunner } from "./test-host.js";
 
 describe("openapi: decorators", () => {
@@ -34,7 +41,6 @@ describe("openapi: decorators", () => {
 
       expectDiagnostics(diagnostics, {
         code: "invalid-argument",
-        message: "Argument '123' is not assignable to parameter of type 'valueof string'",
       });
     });
   });
@@ -79,7 +85,6 @@ describe("openapi: decorators", () => {
 
       expectDiagnostics(diagnostics, {
         code: "invalid-argument",
-        message: "Argument '123' is not assignable to parameter of type 'valueof string'",
       });
     });
 
@@ -108,7 +113,6 @@ describe("openapi: decorators", () => {
 
       expectDiagnostics(diagnostics, {
         code: "invalid-argument",
-        message: "Argument '123' is not assignable to parameter of type 'valueof string'",
       });
     });
 
@@ -121,7 +125,6 @@ describe("openapi: decorators", () => {
 
       expectDiagnostics(diagnostics, {
         code: "invalid-argument",
-        message: "Argument '123' is not assignable to parameter of type 'valueof string'",
       });
     });
 
@@ -150,6 +153,63 @@ describe("openapi: decorators", () => {
   });
 
   describe("@info", () => {
+    describe("emit diagnostics when passing extension key not starting with `x-` in additionalInfo", () => {
+      it.each([
+        ["root", `{ foo:"Bar" }`],
+        ["license", `{ license:{ name: "Apache 2.0", foo:"Bar"} }`],
+        ["contact", `{ contact:{ foo:"Bar"} }`],
+        ["complex", `{ contact:{ "x-custom": "string" }, foo:"Bar" }`],
+      ])("%s", async (_, code) => {
+        const diagnostics = await runner.diagnose(`
+        @info(${code})
+        @test namespace Service;
+      `);
+
+        expectDiagnostics(diagnostics, {
+          code: "@typespec/openapi/invalid-extension-key",
+          message: `OpenAPI extension must start with 'x-' but was 'foo'`,
+        });
+      });
+
+      it("multiple", async () => {
+        const diagnostics = await runner.diagnose(`
+          @info({
+            license:{ name: "Apache 2.0", foo1:"Bar"}, 
+            contact:{ "x-custom": "string", foo2:"Bar" }, 
+            foo3:"Bar" 
+          })
+          @test namespace Service;
+        `);
+
+        expectDiagnostics(diagnostics, [
+          {
+            code: "@typespec/openapi/invalid-extension-key",
+            message: `OpenAPI extension must start with 'x-' but was 'foo1'`,
+          },
+          {
+            code: "@typespec/openapi/invalid-extension-key",
+            message: `OpenAPI extension must start with 'x-' but was 'foo2'`,
+          },
+          {
+            code: "@typespec/openapi/invalid-extension-key",
+            message: `OpenAPI extension must start with 'x-' but was 'foo3'`,
+          },
+        ]);
+      });
+    });
+
+    it("emit diagnostic if termsOfService is not a valid url", async () => {
+      const diagnostics = await runner.diagnose(`
+        @info({termsOfService:"notvalidurl"})
+        @test namespace Service {}
+      `);
+
+      expectDiagnostics(diagnostics, {
+        code: "@typespec/openapi/not-url",
+        message: "TermsOfService: notvalidurl is not a valid URL.",
+      });
+    });
+
     it("emit diagnostic if use on non namespace", async () => {
       const diagnostics = await runner.diagnose(`
         @info({})
@@ -170,8 +230,6 @@ describe("openapi: decorators", () => {
 
       expectDiagnostics(diagnostics, {
         code: "invalid-argument",
-        message:
-          "Argument '123' is not assignable to parameter of type 'TypeSpec.OpenAPI.AdditionalInfo'",
       });
     });
 
@@ -242,6 +300,241 @@ describe("openapi: decorators", () => {
       `)) as { Service: Namespace };
 
       deepStrictEqual(resolveInfo(runner.program, Service), {});
+    });
+
+    it("setInfo() function for setting info object directly", async () => {
+      const { Service } = (await runner.compile(`
+        @test namespace Service {}
+      `)) as { Service: Namespace };
+      setInfo(runner.program, Service, {
+        title: "My API",
+        version: "1.0.0",
+        summary: "My API summary",
+        termsOfService: "http://example.com/terms/",
+        contact: {
+          name: "API Support",
+          url: "http://www.example.com/support",
+          email: "support@example.com",
+        },
+        license: {
+          name: "Apache 2.0",
+          url: "http://www.apache.org/licenses/LICENSE-2.0.html",
+        },
+        "x-custom": "Bar",
+      });
+      deepStrictEqual(getInfo(runner.program, Service), {
+        title: "My API",
+        version: "1.0.0",
+        summary: "My API summary",
+        termsOfService: "http://example.com/terms/",
+        contact: {
+          name: "API Support",
+          url: "http://www.example.com/support",
+          email: "support@example.com",
+        },
+        license: {
+          name: "Apache 2.0",
+          url: "http://www.apache.org/licenses/LICENSE-2.0.html",
+        },
+        "x-custom": "Bar",
+      });
+    });
+  });
+
+  describe("@tagMetadata", () => {
+    it("emit an error if a non-service namespace", async () => {
+      const diagnostics = await runner.diagnose(
+        `
+        @tagMetadata("tagName", #{})
+        namespace Test {}
+      `,
+      );
+      expectDiagnostics(diagnostics, [
+        {
+          code: "@typespec/openapi/tag-metadata-target-service",
+        },
+      ]);
+    });
+
+    it.each([
+      ["tagName is not a string", `@tagMetadata(123, #{})`],
+      ["tagMetdata parameter is not an object", `@tagMetadata("tagName", 123)`],
+      ["description is not a string", `@tagMetadata("tagName", #{ description: 123, })`],
+      ["externalDocs is not an object", `@tagMetadata("tagName", #{ externalDocs: 123, })`],
+    ])("%s", async (_, code) => {
+      const diagnostics = await runner.diagnose(
+        `
+        ${code}
+        namespace PetStore{};
+        `,
+      );
+
+      expectDiagnostics(diagnostics, {
+        code: "invalid-argument",
+      });
+    });
+
+    it("emit diagnostic if dup tagName", async () => {
+      const diagnostics = await runner.diagnose(
+        `
+        @service()
+        @tagMetadata("tagName", #{})
+        @tagMetadata("tagName", #{})
+        namespace PetStore{};
+        `,
+      );
+
+      expectDiagnostics(diagnostics, {
+        code: "@typespec/openapi/duplicate-tag",
+      });
+    });
+
+    describe("emit diagnostics when passing extension key not starting with `x-` in metadata", () => {
+      it.each([
+        ["root", `#{ foo:"Bar" }`],
+        ["externalDocs", `#{ externalDocs: #{ url: "https://example.com", foo:"Bar"} }`],
+        [
+          "complex",
+          `#{ externalDocs: #{ url: "https://example.com", \`x-custom\`: "string" }, foo:"Bar" }`,
+        ],
+      ])("%s", async (_, code) => {
+        const diagnostics = await runner.diagnose(
+          `
+          @service()
+          @tagMetadata("tagName", ${code})
+          namespace PetStore{};
+          `,
+        );
+
+        expectDiagnostics(diagnostics, {
+          code: "@typespec/openapi/invalid-extension-key",
+          message: `OpenAPI extension must start with 'x-' but was 'foo'`,
+        });
+      });
+
+      it("multiple", async () => {
+        const diagnostics = await runner.diagnose(
+          `
+          @service()
+          @tagMetadata("tagName", #{
+            externalDocs: #{ url: "https://example.com", foo1:"Bar" }, 
+            foo2:"Bar" 
+          })
+          @test namespace Service{};
+          `,
+        );
+
+        expectDiagnostics(diagnostics, [
+          {
+            code: "@typespec/openapi/invalid-extension-key",
+            message: `OpenAPI extension must start with 'x-' but was 'foo1'`,
+          },
+          {
+            code: "@typespec/openapi/invalid-extension-key",
+            message: `OpenAPI extension must start with 'x-' but was 'foo2'`,
+          },
+        ]);
+      });
+    });
+
+    it("emit diagnostic if externalDocs.url is not a valid url", async () => {
+      const diagnostics = await runner.diagnose(
+        `
+        @service()
+        @tagMetadata("tagName", #{
+            externalDocs: #{ url: "notvalidurl"}, 
+        })
+        @test namespace Service {}
+        `,
+      );
+
+      expectDiagnostics(diagnostics, {
+        code: "@typespec/openapi/not-url",
+        message: "externalDocs.url: notvalidurl is not a valid URL.",
+      });
+    });
+
+    it("emit diagnostic if use on non namespace", async () => {
+      const diagnostics = await runner.diagnose(
+        `
+        @tagMetadata("tagName", #{})
+        model Foo {}
+        `,
+      );
+
+      expectDiagnostics(diagnostics, {
+        code: "decorator-wrong-target",
+        message:
+          "Cannot apply @tagMetadata decorator to Foo since it is not assignable to Namespace",
+      });
+    });
+
+    const testCases: [string, string, any][] = [
+      ["set tagMetadata without additionalInfo", `@tagMetadata("tagName", #{})`, { tagName: {} }],
+      [
+        "set tagMetadata without externalDocs",
+        `@tagMetadata("tagName", #{ description: "Pets operations" })`,
+        { tagName: { description: "Pets operations" } },
+      ],
+      [
+        "set tagMetadata additionalInfo",
+        `@tagMetadata("tagName", #{ \`x-custom\`: "string" })`,
+        { tagName: { "x-custom": "string" } },
+      ],
+      [
+        "set multiple tagsMetadata",
+        `@tagMetadata(
+            "tagName1",
+            #{
+              description: "Pets operations",
+              externalDocs: #{
+                url: "https://example.com",
+                \`x-custom\`: "string"
+              }        
+            }
+          )
+          @tagMetadata(
+            "tagName2",
+            #{
+              description: "Pets operations",
+              externalDocs: #{
+                url: "https://example.com",
+                description: "More info."        
+              },
+               \`x-custom\`: "string"
+            }
+          )`,
+        {
+          tagName1: {
+            description: "Pets operations",
+            externalDocs: {
+              url: "https://example.com",
+              "x-custom": "string",
+            },
+          },
+
+          tagName2: {
+            description: "Pets operations",
+            externalDocs: {
+              url: "https://example.com",
+              description: "More info.",
+            },
+            "x-custom": "string",
+          },
+        },
+      ],
+    ];
+    it.each(testCases)("%s", async (_, tagMetaDecorator, expected) => {
+      const runner = await createOpenAPITestRunner();
+      const { PetStore } = await runner.compile(
+        `
+        @service()
+        ${tagMetaDecorator}
+        @test 
+        namespace PetStore {}
+        `,
+      );
+      deepStrictEqual(getTagsMetadata(runner.program, PetStore), expected);
     });
   });
 });

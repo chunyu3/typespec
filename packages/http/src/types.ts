@@ -2,12 +2,16 @@ import {
   DiagnosticResult,
   Interface,
   ListOperationOptions,
+  Model,
   ModelProperty,
   Namespace,
   Operation,
   Program,
+  Tuple,
   Type,
 } from "@typespec/compiler";
+import { CookieOptions, PathOptions, QueryOptions } from "../generated-defs/TypeSpec.Http.js";
+import { HeaderProperty, HttpProperty } from "./http-property.js";
 
 /**
  * @deprecated use `HttpOperation`. To remove in November 2022 release.
@@ -17,7 +21,6 @@ export type OperationDetails = HttpOperation;
 export type HttpVerb = "get" | "put" | "post" | "patch" | "delete" | "head";
 
 /** @deprecated use Authentication */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type ServiceAuthentication = Authentication;
 
 export interface Authentication {
@@ -52,6 +55,9 @@ export interface HttpAuthBase {
    * Optional description.
    */
   description?: string;
+
+  /** Model that defined the authentication */
+  readonly model: Model;
 }
 
 /**
@@ -59,7 +65,7 @@ export interface HttpAuthBase {
  * The client sends HTTP requests with the Authorization header that contains the word Basic word followed by a space and a base64-encoded string username:password.
  * For example, to authorize as demo / p@55w0rd the client would send
  * ```
- *  Authorization: Basic ZGVtbzpwQDU1dzByZA==
+ * Authorization: Basic ZGVtbzpwQDU1dzByZA==
  * ```
  */
 export interface BasicAuth extends HttpAuthBase {
@@ -252,7 +258,7 @@ export type OperationContainer = Namespace | Interface;
 
 export type OperationVerbSelector = (
   program: Program,
-  operation: Operation
+  operation: Operation,
 ) => HttpVerb | undefined;
 
 export interface OperationParameterOptions {
@@ -271,7 +277,7 @@ export interface RouteResolutionOptions extends RouteOptions {
 }
 
 export interface RouteProducerResult {
-  segments: string[];
+  uriTemplate: string;
   parameters: HttpOperationParameters;
 }
 
@@ -280,7 +286,7 @@ export type RouteProducer = (
   operation: Operation,
   parentSegments: string[],
   overloadBase: HttpOperation | undefined,
-  options: RouteOptions
+  options: RouteOptions,
 ) => DiagnosticResult<RouteProducerResult>;
 
 export interface HeaderFieldOptions {
@@ -293,52 +299,58 @@ export interface HeaderFieldOptions {
   format?: "csv" | "multi" | "ssv" | "tsv" | "pipes" | "simple" | "form";
 }
 
-export interface QueryParameterOptions {
+export interface CookieParameterOptions extends Required<CookieOptions> {
+  type: "cookie";
+  name: string;
+}
+
+export interface QueryParameterOptions extends Required<Omit<QueryOptions, "format">> {
   type: "query";
-  name: string;
   /**
-   * The string format of the array. "csv" and "simple" are used interchangeably, as are
-   * "multi" and "form".
+   * @deprecated use explode and `@encode` decorator instead.
    */
-  format?: "multi" | "csv" | "ssv" | "tsv" | "pipes" | "simple" | "form";
+  format?: "csv" | "multi" | "ssv" | "tsv" | "pipes" | "simple" | "form";
 }
 
-export interface PathParameterOptions {
+export interface PathParameterOptions extends Required<PathOptions> {
   type: "path";
-  name: string;
 }
 
-export type HttpOperationParameter = (
-  | HeaderFieldOptions
-  | QueryParameterOptions
-  | PathParameterOptions
-) & {
+export type HttpOperationParameter =
+  | HttpOperationHeaderParameter
+  | HttpOperationCookieParameter
+  | HttpOperationQueryParameter
+  | HttpOperationPathParameter;
+
+export type HttpOperationHeaderParameter = HeaderFieldOptions & {
+  param: ModelProperty;
+};
+export type HttpOperationCookieParameter = CookieParameterOptions & {
+  param: ModelProperty;
+};
+export type HttpOperationQueryParameter = QueryParameterOptions & {
+  param: ModelProperty;
+};
+export type HttpOperationPathParameter = PathParameterOptions & {
   param: ModelProperty;
 };
 
 /**
- * Represent the body information for an http request.
- *
- * @note the `type` must be a `Model` if the content type is multipart.
+ * @deprecated use {@link HttpOperationBody}
  */
-export interface HttpOperationRequestBody extends HttpOperationBody {
-  /**
-   * If the body was explicitly set as a property. Correspond to the property with `@body` or `@bodyRoot`
-   */
-  parameter?: ModelProperty;
-}
-
-export interface HttpOperationResponseBody extends HttpOperationBody {
-  /**
-   * If the body was explicitly set as a property. Correspond to the property with `@body` or `@bodyRoot`
-   */
-  readonly property?: ModelProperty;
-}
+export type HttpOperationRequestBody = HttpOperationBody;
+/**
+ * @deprecated use {@link HttpOperationBody}
+ */
+export type HttpOperationResponseBody = HttpOperationBody;
 
 export interface HttpOperationParameters {
+  /** Http properties */
+  readonly properties: HttpProperty[];
+
   parameters: HttpOperationParameter[];
 
-  body?: HttpOperationRequestBody;
+  body?: HttpOperationBody | HttpOperationMultipartBody;
 
   /** @deprecated use {@link body.type} */
   bodyType?: Type;
@@ -363,12 +375,21 @@ export interface HttpService {
 
 export interface HttpOperation {
   /**
-   * Route path
+   * The fully resolved uri template as defined by http://tools.ietf.org/html/rfc6570.
+   * @example "/foo/{bar}/baz{?qux}"
+   * @example "/foo/{+path}"
+   */
+  readonly uriTemplate: string;
+
+  /**
+   * Route path.
+   * Not recommended use {@link uriTemplate} instead. This will not work for complex cases like not-escaping reserved chars.
    */
   path: string;
 
   /**
    * Path segments
+   * @deprecated use {@link uriTemplate} instead
    */
   pathSegments: string[];
 
@@ -420,7 +441,7 @@ export interface RoutePath {
 
 export interface HttpOperationResponse {
   /** @deprecated use {@link statusCodes} */
-  // eslint-disable-next-line deprecation/deprecation
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
   statusCode: StatusCode;
 
   /**
@@ -445,26 +466,67 @@ export interface HttpOperationResponse {
 }
 
 export interface HttpOperationResponseContent {
+  /** Http properties for this response */
+  readonly properties: HttpProperty[];
+
   headers?: Record<string, ModelProperty>;
-  body?: HttpOperationResponseBody;
+  body?: HttpOperationBody | HttpOperationMultipartBody;
 }
 
-export interface HttpOperationBody {
-  /**
-   * Content types.
-   */
-  contentTypes: string[];
+export interface HttpOperationBodyBase {
+  /** Content types. */
+  readonly contentTypes: string[];
+  /** Property used to set the content type if exists */
+  readonly contentTypeProperty?: ModelProperty;
+}
 
-  /**
-   * Type of the operation body.
-   */
-  type: Type;
+export interface HttpBody {
+  readonly type: Type;
 
   /** If the body was explicitly set with `@body`. */
   readonly isExplicit: boolean;
 
   /** If the body contains metadata annotations to ignore. For example `@header`. */
   readonly containsMetadataAnnotations: boolean;
+
+  /**
+   * @deprecated use {@link property}
+   */
+  parameter?: ModelProperty;
+
+  /**
+   * If the body was explicitly set as a property. Correspond to the property with `@body` or `@bodyRoot`
+   */
+  readonly property?: ModelProperty;
+}
+
+export interface HttpOperationBody extends HttpOperationBodyBase, HttpBody {
+  readonly bodyKind: "single";
+}
+
+/** Body marked with `@multipartBody` */
+export interface HttpOperationMultipartBody extends HttpOperationBodyBase {
+  readonly bodyKind: "multipart";
+  readonly type: Model | Tuple;
+  /** Property annotated with `@multipartBody` */
+  readonly property: ModelProperty;
+  readonly parts: HttpOperationPart[];
+}
+
+/** Represent an part in a multipart body. */
+export interface HttpOperationPart {
+  /** Part name */
+  readonly name?: string;
+  /** If the part is optional */
+  readonly optional: boolean;
+  /** Part body */
+  readonly body: HttpOperationBody;
+  /** If the Part is an HttpFile this is the property defining the filename */
+  readonly filename?: ModelProperty;
+  /** Part headers */
+  readonly headers: HeaderProperty[];
+  /** If there can be multiple of that part */
+  readonly multi: boolean;
 }
 
 export interface HttpStatusCodeRange {

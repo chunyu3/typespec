@@ -1,5 +1,519 @@
 # Change Log - @typespec/compiler
 
+## 0.64.0
+
+### Bug Fixes
+
+- [#5295](https://github.com/microsoft/typespec/pull/5295) Fix incorrectly returning a positive `BigInt` for a negative `Numeric`.
+- [#5353](https://github.com/microsoft/typespec/pull/5353) Meta property are auto-completed, current only supported '::type', '::parameters', '::returnType'
+- [#5180](https://github.com/microsoft/typespec/pull/5180) Fixed serialization of object examples on unions
+- [#5525](https://github.com/microsoft/typespec/pull/5525) Enum-driven visibility decorators and projections now interact correctly.
+
+Projections now project EnumValue values to preserve consistency with projected Enum/EnumMember types using a best-effort
+strategy.
+
+### Features
+
+- [#5415](https://github.com/microsoft/typespec/pull/5415) Added support for emitter selections for init template.
+- [#5316](https://github.com/microsoft/typespec/pull/5316) Compiler trace will be sent to IDE as trace log through language server
+- [#5594](https://github.com/microsoft/typespec/pull/5594) Support Emitters section in Init Template when creating TypeSpec project in vscode
+- [#5294](https://github.com/microsoft/typespec/pull/5294) Add capacities in TypeSpec Language Server to support "Scaffolding new TypeSpec project" in IDE
+
+
+## 0.63.0
+
+### Bug Fixes
+
+- [#5252](https://github.com/microsoft/typespec/pull/5252) Added RegEx validation for @pattern and will throw warning for invalid RegEx string
+
+### Features
+
+- [#4937](https://github.com/microsoft/typespec/pull/4937) Add mutateSubgraphWithNamespace as a separate API
+- [#4837](https://github.com/microsoft/typespec/pull/4837) Allow trailing delimiter in array values, tuple, decorator declaration, scalar initializer, etc.
+- [#5149](https://github.com/microsoft/typespec/pull/5149) Experimental: Improve Realm, Mutator, and Typekit implementations.
+
+This change strongly binds a Realm and Typekit together, and changes mutators so that new types are cloned within the
+mutator's realm. The default Typekit now creates a default typekit realm for the current program, and a Typekit can be
+easily created to work in a specific Program or Realm as needed.
+- [#4825](https://github.com/microsoft/typespec/pull/4825) Adds support for enum-driven visibility in the compiler core.
+
+
+## 0.62.0
+
+### Bug Fixes
+
+- [#4745](https://github.com/microsoft/typespec/pull/4745) Improve diagnostic when JS files fail to load due to a JS error
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+### Features
+
+- [#4807](https://github.com/microsoft/typespec/pull/4807) CLI logs diagnostic source path relative to the CWD.
+- [#4871](https://github.com/microsoft/typespec/pull/4871) [experimental] Mutators: Allow mutating namespaces
+- [#4470](https://github.com/microsoft/typespec/pull/4470) Add support for paginated operations
+- [#4849](https://github.com/microsoft/typespec/pull/4849) Overall of the symbol resolution. TypeSpec is able to resolve anything that can be statically linked. Augment decorators in turn are able to target any statically linkable types.
+- [#4806](https://github.com/microsoft/typespec/pull/4806) Diagnostics emitted in template instance include instantiation trace.
+- [#4790](https://github.com/microsoft/typespec/pull/4790) Support completion for tspconfig.yaml file in vscode
+
+
+## 0.61.2
+
+### Bug Fixes
+
+- [#4704](https://github.com/microsoft/typespec/pull/4704) Fix order of resolution from node_modules and parent package
+
+
+## 0.61.1
+
+### Bug Fixes
+
+- [#4697](https://github.com/microsoft/typespec/pull/4697) Fix module resolution when resolving self from within another package
+
+
+## 0.61.0
+
+### Bug Fixes
+
+- [#4626](https://github.com/microsoft/typespec/pull/4626) [API] Add missing exit callback
+- [#4513](https://github.com/microsoft/typespec/pull/4513) Fixes issue with the semantic walker where `exitTuple` was not being emitted.
+- [#4462](https://github.com/microsoft/typespec/pull/4462) Fix examples with enums inside of unions
+- [#4574](https://github.com/microsoft/typespec/pull/4574) Fix: Passing `const` of model type to `@example`
+- [#4551](https://github.com/microsoft/typespec/pull/4551) Json serialization of example respect `@encodedName`
+- [#4514](https://github.com/microsoft/typespec/pull/4514) Fix issue with decimal numeric and leading `0.0` with multiple digit
+- [#4445](https://github.com/microsoft/typespec/pull/4445) [API] model `sourceModels` property are now projected correctly
+- [#4467](https://github.com/microsoft/typespec/pull/4467) Changing tspconfig.yaml won't take effect in LSP server because of the cache
+- [#4563](https://github.com/microsoft/typespec/pull/4563) `tsp compile --watch` reread from `tspconfig.yaml` file
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+### Features
+
+- [#4442](https://github.com/microsoft/typespec/pull/4442) Library diagnostic can now define a `description` and `url` that links to a more detailed doc for this diagnostic
+- [#4290](https://github.com/microsoft/typespec/pull/4290) Adding experimental (unstable) API fro Type Mutators
+- [#4595](https://github.com/microsoft/typespec/pull/4595) Expose more accurate `PackageJson` type and deprecate `NodePackage`
+- [#4606](https://github.com/microsoft/typespec/pull/4606) Add support for node `exports` field. Specific typespec exports can be provided with the `typespec` field
+
+```json
+"exports": {
+  ".": {
+    "typespec": "./lib/main.tsp",
+  },
+  "./named": {
+    "typespec": "./lib/named.tsp",
+  }
+}
+```
+- [#4539](https://github.com/microsoft/typespec/pull/4539) Support nested emitter options
+
+### Breaking Changes
+
+- [#4539](https://github.com/microsoft/typespec/pull/4539) Config parameters and emitters options cannot contains `.`. This conflict with newly added support for nested options.
+- [#4500](https://github.com/microsoft/typespec/pull/4500) API: Update default of `decoratorArgMarshalling` from `legacy` to `new`
+
+To revert to the old behavior export the following. **Highly discouraged, this will be removed in a few versions.**
+
+```ts
+export const $flags = definePackageFlags({
+  decoratorArgMarshalling: "legacy",
+});
+```
+
+
+## 0.60.1
+
+### Bug Fixes
+
+- [#4420](https://github.com/microsoft/typespec/pull/4420) Fix: Numeric values defined with e-notation incorrectly resolved
+
+
+## 0.60.0
+
+### Bug Fixes
+
+- [#4381](https://github.com/microsoft/typespec/pull/4381) Fix Semantic walker doesn't fire exitOperation or exitModelProperty
+- [#4146](https://github.com/microsoft/typespec/pull/4146) Fix model expression defined in alias will resolve its namespace from the namespace where the alias was declared
+- [#4147](https://github.com/microsoft/typespec/pull/4147) Fix examples with models using `extends`
+- [#4144](https://github.com/microsoft/typespec/pull/4144) Fix: Model and union expression in template were not considered as template instances
+- [#4135](https://github.com/microsoft/typespec/pull/4135) Fix numeric 0 stringify producing 0.0
+- [#4064](https://github.com/microsoft/typespec/pull/4064) IDE: Formatting command will use prettier config if provided over the editor's configuration.
+- [#4089](https://github.com/microsoft/typespec/pull/4089) Fix tmlanguage for named type argument in type reference.
+- [#4324](https://github.com/microsoft/typespec/pull/4324) API: Extract source resolution logic into its own source loader
+
+### Features
+
+- [#4139](https://github.com/microsoft/typespec/pull/4139) Add new way to define decorator implementation with `$decorators` export.
+```ts
+export const $decorators = {
+  "TypeSpec.OpenAPI": {
+    useRef: $useRef,
+    oneOf: $oneOf,
+  },
+};
+```
+- [#4148](https://github.com/microsoft/typespec/pull/4148) Diagnostics logged to the terminal now have a clickable hyperlink to the diagnostic documentation url if applicable.
+- [#4141](https://github.com/microsoft/typespec/pull/4141) Diagnostic code in IDE now link to the linter rule documentation url if applicable
+- [#4357](https://github.com/microsoft/typespec/pull/4357) Improvements to type relation errors: Show stack when it happens in a nested property otherwise show up in the correct location.
+
+
+## 0.59.1
+
+### Bug Fixes
+
+- [#4173](https://github.com/microsoft/typespec/pull/4173) Fix: Revert `unix-style` warning that was preventing windows path via the CLI as well
+
+
+## 0.59.0
+
+### Bug Fixes
+
+- [#3881](https://github.com/microsoft/typespec/pull/3881) Fixes a bug where ending a non-terminal line in a multi-line comment with a backslash caused the next star to show up in the parsed doc string.
+- [#4050](https://github.com/microsoft/typespec/pull/4050) Allow using compact namespace form `Foo.Bar` when inside another namespace
+  ```tsp
+  namespace MyOrg.MyProject {
+    namespace MyModule.MySubmodule { // <-- this used to emit an error
+      // ...
+    }
+  }
+  ```
+- [#3898](https://github.com/microsoft/typespec/pull/3898) Fix decimal numeric with leading zeros
+- [#4046](https://github.com/microsoft/typespec/pull/4046) Fix type comparison of literal and scalar when in projection context
+- [#4022](https://github.com/microsoft/typespec/pull/4022) `tsp compile --watch` will not stop when a crash happens during compilation
+- [#3933](https://github.com/microsoft/typespec/pull/3933) Add `const` template parameter to get the precise lib type
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+### Features
+
+- [#3906](https://github.com/microsoft/typespec/pull/3906) Support completion for template parameter extending model or object value
+
+  Example
+  ```tsp
+  model User<T extends {name: string, age: int16}> {
+  }
+  alias user = User< {┆
+                      | [age]
+                      | [name]
+  ```
+- [#4020](https://github.com/microsoft/typespec/pull/4020) Add support for encoding numeric types as string
+- [#4023](https://github.com/microsoft/typespec/pull/4023) Warn when using `\` in config file field that expect a path.
+- [#3932](https://github.com/microsoft/typespec/pull/3932) Add `ArrayEncoding` enum to define simple serialization of arrays
+
+### Breaking Changes
+
+- [#4050](https://github.com/microsoft/typespec/pull/4050) Fix issue where naming a namespace with the same name as the blockless namespace would merge with it instead of creating a subnamespace like any other name would.
+
+  ```tsp
+  namespace MyOrg.MyProject;
+
+  namespace MyOrg.MyProject.MyArea {
+    model A {}
+  }
+
+  namespace MyArea2 {
+    model B {}
+  }
+  ```
+
+  Previously model `A` would end-up in namespace `MyOrg.MyProject.MyArea` and model `B` in `MyOrg.MyProject.MyArea2`. With this change model `A` will now be in `MyOrg.MyProject.MyOrg.MyProject.MyArea`. To achieve the previous behavior the above code should be written as:
+
+  ```tsp
+  namespace MyOrg.MyProject;
+
+  namespace MyArea {
+    model A {}
+  }
+
+  namespace MyArea2 {
+    model B {}
+  }
+  ```
+
+
+## 0.58.1
+
+### Bug Fixes
+
+- [#3875](https://github.com/microsoft/typespec/pull/3875) Fix issues with examples not working with `Array`, `Record`, `Union` and `unknown` types
+
+
+## 0.58.0
+
+### Bug Fixes
+
+- [#3623](https://github.com/microsoft/typespec/pull/3623) Fix crash of language server on firefox
+- [#3516](https://github.com/microsoft/typespec/pull/3516) Deprecate getAssetEmitter and recommend calling `createAssetEmitter` directly
+- [#3767](https://github.com/microsoft/typespec/pull/3767) Fix semantic highlighting of using of single namespace
+- [#3824](https://github.com/microsoft/typespec/pull/3824) Do not cast model expression to object value if the constraint is allowing the type
+- [#3577](https://github.com/microsoft/typespec/pull/3577) Fix formatting of object and array literal in decorator to hug parenthesis
+- [#3823](https://github.com/microsoft/typespec/pull/3823) Fix formatting of scalar constructor called with no args
+- [#3743](https://github.com/microsoft/typespec/pull/3743) Fix 'typespec vs install' command on windows
+- [#3605](https://github.com/microsoft/typespec/pull/3605) Fix templates initialized on node 22
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+### Features
+
+- [#3699](https://github.com/microsoft/typespec/pull/3699) Moved compiler dependencies to peer and dev for scaffolded projects.
+- [#3572](https://github.com/microsoft/typespec/pull/3572) Add new `@example` and `@opExample` decorator to provide examples on types and operations.
+
+  ```tsp
+  @example(#{
+    id: "some",
+    date: utcDateTime.fromISO("2020-01-01T00:00:00Z"),
+    timeout: duration.fromISO("PT1M"),
+  })
+  model Foo {
+    id: string;
+    date: utcDateTime;
+  
+    @encode("seconds", int32) timeout: duration;
+  }
+  ```
+  
+  ```tsp
+  @opExample(
+    #{
+      parameters: #{
+        pet: #{
+          id: "some",
+          name: "Fluffy",
+          dob: plainDate.fromISO("2020-01-01"),
+        },
+      },
+      returnType: #{
+        id: "some",
+        name: "Fluffy",
+        dob: plainDate.fromISO("2020-01-01"),
+      },
+    },
+    #{ title: "First", description: "Show creating a pet" }
+  )
+  op createPet(pet: Pet): Pet;
+  ```
+- [#3751](https://github.com/microsoft/typespec/pull/3751) Adds option to `tsp init` to generate .gitignore file
+
+### Breaking Changes
+
+- [#3793](https://github.com/microsoft/typespec/pull/3793) Do not carry over `@friendlyName` with `model is` or `op is`
+
+  ```tsp
+  @friendlyName("Abc{T}", T)
+  model Foo<T> {}
+  
+  model Bar is Foo<string>;
+  
+  // This can be changed to
+  model Abcstring is Foo<string>;
+  ```
+- [#3659](https://github.com/microsoft/typespec/pull/3659) Disallows overriding a required inherited property with an optional property.
+
+In previous versions of TypeSpec, it was possible to override a required property with an optional property. This is no longer allowed. This change may result in errors in your code if you were relying on this bug, but specifications that used this behavior are likely to have been exposed to errors resulting from incoherent type checking behavior.
+
+The following example demonstrates the behavior that is no longer allowed:
+
+```tsp
+model Base {
+  example: string;
+}
+
+model Child extends Base {
+  example?: string;
+}
+```
+
+In this example, the `Child` model overrides the `example` property from the `Base` model with an optional property. This is no longer allowed.
+
+
+## 0.57.0
+
+
+### Breaking changes
+
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Addition of new `const` keyword means using `const` as a property name or decorator name will result in an error. This can be fixed by wrapping the property in backtick.
+
+```tsp
+model Test {
+  // error
+  const: string;
+
+  // correct
+  `const`: string;
+
+}
+```
+
+### Bug Fixes
+
+- [#3399](https://github.com/microsoft/typespec/pull/3399) Preserve leading whitespace in fenced blocks in doc comments
+- [#3566](https://github.com/microsoft/typespec/pull/3566) [API] Do not run decorators on cloned type if the original type wasn't finished
+- [#3522](https://github.com/microsoft/typespec/pull/3522) Fix EINVAL error when running `tsp code install`
+- [#3371](https://github.com/microsoft/typespec/pull/3371) Numeric not handling trailing zeros and causing freeze(e.g. `const a = 100.0`)
+- [#3451](https://github.com/microsoft/typespec/pull/3451) Emitter framework: fix losing context when referencing circular types
+- [#3517](https://github.com/microsoft/typespec/pull/3517) Fix application of `@param` doc tag on operation create with `op is` to override upstream doc
+- [#3488](https://github.com/microsoft/typespec/pull/3488) Add `PickProperties` type to dynamically select a subset of a model
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+### Features
+
+- [#3280](https://github.com/microsoft/typespec/pull/3280) Support completion for Model with extended properties
+
+  Example
+  ```tsp
+  model Device {
+    name: string;
+    description: string;
+  }
+
+  model Phone extends Device {
+    ┆
+  } | [name]
+    | [description]
+  ```
+- [#3280](https://github.com/microsoft/typespec/pull/3280) Support completion for object values and model expression properties.
+
+  Example
+  ```tsp
+  model User {
+    name: string;
+    age: int32;
+    address: string;
+  }
+
+  const user: User = #{name: "Bob", ┆}
+                                    | [age]
+                                    | [address]
+  ```
+- [#3375](https://github.com/microsoft/typespec/pull/3375) Allow `@` to be escaped in doc comment with `\`
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Add syntax for declaring values. [See docs](https://typespec.io/docs/language-basics/values).
+
+Object and array values
+```tsp
+@dummy(#{
+  name: "John",
+  age: 48,
+  address: #{ city: "London" }
+  aliases: #["Bob", "Frank"]
+})
+```
+
+Scalar constructors
+
+```tsp
+scalar utcDateTime {
+  init fromISO(value: string);
+}
+
+model DateRange {
+  minDate: utcDateTime = utcDateTime.fromISO("2024-02-15T18:36:03Z");
+}
+```
+- [#3527](https://github.com/microsoft/typespec/pull/3527) Add support for `@prop` doc comment tag to describe model properties
+- [#3422](https://github.com/microsoft/typespec/pull/3422) Formatter: Indent or dedent multiline strings to the current indentation
+- [#3460](https://github.com/microsoft/typespec/pull/3460) Hide deprecated items from completion list
+- [#3443](https://github.com/microsoft/typespec/pull/3443) Support completion for keyword 'extends' and 'is'
+
+  Example
+  ```tsp
+  model Dog ┆ {}
+            | [extends]
+            | [is]
+  
+  scalar Addresss ┆ 
+                  | [extends]
+
+  op jump ┆ 
+          | [is]
+  
+  interface ResourceA ┆ {}
+                      | [extends]
+
+  model Cat<T ┆> {}
+              | [extends]
+  ```
+- [#3462](https://github.com/microsoft/typespec/pull/3462) Linter `all` rulesets is automatically created if not explicitly provided
+- [#3533](https://github.com/microsoft/typespec/pull/3533) More logs and traces are added for diagnostic and troubleshooting in TypeSpec language server
+
+### Deprecations
+
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Using a tuple type as a value is deprecated. Tuple types in contexts where values are expected must be updated to be array values instead. A codefix is provided to automatically convert tuple types into array values.
+
+```tsp
+model Test {
+  // Deprecated
+  values: string[] = ["a", "b", "c"];
+  
+  // Correct
+  values: string[] = #["a", "b", "c"];
+```
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Using a model type as a value is deprecated. Model types in contexts where values are expected must be updated to be object values instead. A codefix is provided to automatically convert model types into object values.
+
+```tsp
+model Test {
+  // Deprecated
+  user: {name: string} = {name: "System"};
+  
+  // Correct
+  user: {name: string} = #{name: "System"};
+```
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Decorator API: Legacy marshalling logic
+
+With the introduction of values, the decorator marshalling behavior has changed in some cases. This behavior is opt-in by setting the `valueMarshalling` package flag to `"new"`, but will be the default behavior in future versions. It is strongly recommended to adopt this new behavior as soon as possible.
+
+
+  Example: 
+  ```tsp
+  extern dec multipleOf(target: numeric | Reflection.ModelProperty, value: valueof numeric);
+  ```
+  Will now emit a deprecated warning because `value` is of type `valueof string` which would marshall to `Numeric` under the new logic but as `number` previously.
+
+  To opt-in you can add the following to your library js/ts files.
+  ```ts
+  export const $flags = definePackageFlags({
+    decoratorArgMarshalling: "new",
+  });
+  ```
+
+
+## 0.56.0
+
+### Bug Fixes
+
+- [#3170](https://github.com/microsoft/typespec/pull/3170) `--nostdlib` flag will now work by only applying to optional standard library types
+- [#3212](https://github.com/microsoft/typespec/pull/3212) Fix: augmenting template model property could result in sending invalid argument to decorator
+- [#3188](https://github.com/microsoft/typespec/pull/3188) Fix: Do not crash when trying to access member of aliased expressions
+- [#3185](https://github.com/microsoft/typespec/pull/3185) Fix tsp init hanging when done due to unclosed connection
+- [#3151](https://github.com/microsoft/typespec/pull/3151) IDE: Fix completion of statement keywords
+- [#3287](https://github.com/microsoft/typespec/pull/3287) Templated interface extending another templated interface shouldn't run decorator on their operations
+- [#3290](https://github.com/microsoft/typespec/pull/3290) Model with an optional property should not satisfy a constraint with that property required. (`{foo?: string}` cannot be assigned to a constraint of `{foo: string}`)
+- [#3163](https://github.com/microsoft/typespec/pull/3163) Fix: Model with spread indexer shouldn't validate explicit properties
+- [#3227](https://github.com/microsoft/typespec/pull/3227) Stop running decorators on partially instantiated operations(When interface is instantiated but not the operation)
+- [#3180](https://github.com/microsoft/typespec/pull/3180) Fix issue where directives were not parsed to the leaf node in multi-segment Namespace segments.
+- [#3243](https://github.com/microsoft/typespec/pull/3243) Fix calling `tsp install` on windows due to recent NodeJS breaking change to fix vulnerability.
+- [#3216](https://github.com/microsoft/typespec/pull/3216) Fix compiler crash when using an invalid `is` target in an interface operation template
+- [#3246](https://github.com/microsoft/typespec/pull/3246) Internals: Use node built-in `fetch` API that is now stable since node `18.13.0`
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+### Features
+
+- [#3035](https://github.com/microsoft/typespec/pull/3035) `getEncode` returns the fully qualified enum member name if using a custom enum.
+- [#3183](https://github.com/microsoft/typespec/pull/3183) Show template parameters when hovering on an operation template
+- [#3191](https://github.com/microsoft/typespec/pull/3191) [API] Add new `sourceModels` property to model
+
+
 ## 0.55.0
 
 ### Bug Fixes

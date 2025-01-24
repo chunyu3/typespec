@@ -1,19 +1,20 @@
 import assert from "assert";
-import { RmOptions } from "fs";
-import { readFile } from "fs/promises";
+import type { RmOptions } from "fs";
+import { readdir, readFile, stat } from "fs/promises";
 import { globby } from "globby";
+import { join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { logDiagnostics, logVerboseTestOutput } from "../core/diagnostics.js";
 import { createLogger } from "../core/logger/logger.js";
 import { NodeHost } from "../core/node-host.js";
 import { CompilerOptions } from "../core/options.js";
 import { getAnyExtensionFromPath, resolvePath } from "../core/path-utils.js";
-import { Program, compile as compileProgram } from "../core/program.js";
-import { CompilerHost, Diagnostic, StringLiteral, Type } from "../core/types.js";
+import { compile as compileProgram, Program } from "../core/program.js";
+import type { CompilerHost, Diagnostic, StringLiteral, Type } from "../core/types.js";
 import { createSourceFile, getSourceFileKindFromExt } from "../index.js";
 import { createStringMap } from "../utils/misc.js";
 import { expectDiagnosticEmpty } from "./expect.js";
-import { createTestWrapper, findTestPackageRoot } from "./test-utils.js";
+import { createTestWrapper, findTestPackageRoot, resolveVirtualPath } from "./test-utils.js";
 import {
   BasicTestRunner,
   TestFileSystem,
@@ -29,18 +30,10 @@ export interface TestHostOptions {
   compilerHostOverrides?: Partial<CompilerHost>;
 }
 
-export function resolveVirtualPath(path: string, ...paths: string[]) {
-  // NB: We should always resolve an absolute path, and there is no absolute
-  // path that works across OSes. This ensures that we can still rely on API
-  // like pathToFileURL in tests.
-  const rootDir = process.platform === "win32" ? "Z:/test" : "/test";
-  return resolvePath(rootDir, path, ...paths);
-}
-
 function createTestCompilerHost(
   virtualFs: Map<string, string>,
   jsImports: Map<string, Record<string, any>>,
-  options?: TestHostOptions
+  options?: TestHostOptions,
 ): CompilerHost {
   const libDirs = [resolveVirtualPath(".tsp/lib/std")];
   if (!options?.excludeTestLib) {
@@ -169,6 +162,7 @@ export async function createTestFileSystem(options?: TestHostOptions): Promise<T
     addJsFile,
     addRealTypeSpecFile,
     addRealJsFile,
+    addRealFolder,
     addTypeSpecLibrary,
     compilerHost,
     fs: virtualFs,
@@ -186,6 +180,25 @@ export async function createTestFileSystem(options?: TestHostOptions): Promise<T
 
   async function addRealTypeSpecFile(path: string, existingPath: string) {
     virtualFs.set(resolveVirtualPath(path), await readFile(existingPath, "utf8"));
+  }
+
+  async function addRealFolder(folder: string, existingFolder: string) {
+    const entries = await readdir(existingFolder);
+    for (const entry of entries) {
+      const existingPath = join(existingFolder, entry);
+      const virtualPath = join(folder, entry);
+      const s = await stat(existingPath);
+      if (s.isFile()) {
+        if (existingPath.endsWith(".js")) {
+          await addRealJsFile(virtualPath, existingPath);
+        } else {
+          await addRealTypeSpecFile(virtualPath, existingPath);
+        }
+      }
+      if (s.isDirectory()) {
+        await addRealFolder(virtualPath, existingPath);
+      }
+    }
   }
 
   async function addRealJsFile(path: string, existingPath: string) {
@@ -223,7 +236,7 @@ export const StandardTestLibrary: TypeSpecTestLibrary = {
   name: "@typespec/compiler",
   packageRoot: await findTestPackageRoot(import.meta.url),
   files: [
-    { virtualPath: "./.tsp/dist/src/lib", realDir: "./dist/src/lib", pattern: "*" },
+    { virtualPath: "./.tsp/dist/src/lib", realDir: "./dist/src/lib", pattern: "**" },
     { virtualPath: "./.tsp/lib", realDir: "./lib", pattern: "**" },
   ],
 };
@@ -294,7 +307,7 @@ async function createTestHostInternal(): Promise<TestHost> {
     get program() {
       assert(
         program,
-        "Program cannot be accessed without calling compile, diagnose, or compileAndDiagnose."
+        "Program cannot be accessed without calling compile, diagnose, or compileAndDiagnose.",
       );
       return program;
     },
@@ -313,16 +326,16 @@ async function createTestHostInternal(): Promise<TestHost> {
 
   async function compileAndDiagnose(
     mainFile: string,
-    options: CompilerOptions = {}
+    options: CompilerOptions = {},
   ): Promise<[Record<string, Type>, readonly Diagnostic[]]> {
     if (options.noEmit === undefined) {
       // default for tests is noEmit
       options = { ...options, noEmit: true };
     }
-    const p = await compileProgram(fileSystem.compilerHost, mainFile, options);
+    const p = await compileProgram(fileSystem.compilerHost, resolveVirtualPath(mainFile), options);
     program = p;
     logVerboseTestOutput((log) =>
-      logDiagnostics(p.diagnostics, createLogger({ sink: fileSystem.compilerHost.logSink }))
+      logDiagnostics(p.diagnostics, createLogger({ sink: fileSystem.compilerHost.logSink })),
     );
     return [testTypes, p.diagnostics];
   }

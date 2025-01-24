@@ -1,14 +1,15 @@
-import {
+import type {
   Decorator,
   Enum,
-  FunctionParameter,
+  EnumMember,
   Interface,
   LinterRuleDefinition,
   LinterRuleSet,
+  MixedFunctionParameter,
   Model,
   ModelProperty,
-  NodePackage,
   Operation,
+  PackageJson,
   Scalar,
   Type,
   Union,
@@ -25,7 +26,7 @@ export type TypeSpecLibraryRefDoc = TypeSpecRefDocBase & {
   /**
    * Library package.json
    */
-  readonly packageJson: NodePackage;
+  readonly packageJson: PackageJson;
 
   /**
    * Library description
@@ -51,7 +52,7 @@ export type EmitterRefDoc = {
 
 export type LinterRefDoc = {
   /** List of rulesets provided. */
-  readonly ruleSets?: LinterRuleSetRefDoc[];
+  readonly ruleSets: LinterRuleSetRefDoc[];
   readonly rules: LinterRuleRefDoc[];
 };
 
@@ -108,6 +109,11 @@ export type NamedTypeRefDoc = ReferencableElement & {
   readonly signature: string;
   readonly doc: string;
   readonly examples: readonly ExampleRefDoc[];
+  readonly deprecated?: DeprecationNotice;
+};
+
+export type DeprecationNotice = {
+  readonly message: string;
 };
 
 export type DecoratorRefDoc = NamedTypeRefDoc & {
@@ -119,7 +125,7 @@ export type DecoratorRefDoc = NamedTypeRefDoc & {
 };
 
 export type FunctionParameterRefDoc = {
-  readonly type: FunctionParameter;
+  readonly type: MixedFunctionParameter;
   readonly name: string;
   readonly doc: string;
   readonly optional: boolean;
@@ -164,6 +170,11 @@ export type ModelPropertyRefDoc = NamedTypeRefDoc & {
 export type EnumRefDoc = NamedTypeRefDoc & {
   readonly kind: "enum";
   readonly type: Enum;
+  readonly members: ReadonlyMap<string, EnumMemberRefDoc>;
+};
+
+export type EnumMemberRefDoc = NamedTypeRefDoc & {
+  readonly type: EnumMember;
 };
 
 export type UnionRefDoc = NamedTypeRefDoc & {

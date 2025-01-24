@@ -22,13 +22,11 @@ namespace Example;
 
 model Car {
   make: string;
-  model: string;
+  modelName: string;
 }
 ```
 
-## Emitter
-
-### Usage
+## Usage
 
 1. Via the command line
 
@@ -43,15 +41,25 @@ emit:
   - "@typespec/json-schema"
 ```
 
-### Emitter options
+The config can be extended with options as follows:
 
-#### `file-type`
+```yaml
+emit:
+  - "@typespec/json-schema"
+options:
+  "@typespec/json-schema":
+    option: value
+```
+
+## Emitter options
+
+### `file-type`
 
 **Type:** `"yaml" | "json"`
 
 Serialize the schema as either yaml or json.
 
-#### `int64-strategy`
+### `int64-strategy`
 
 **Type:** `"string" | "number"`
 
@@ -60,19 +68,19 @@ How to handle 64 bit integers on the wire. Options are:
 - string: serialize as a string (widely interoperable)
 - number: serialize as a number (not widely interoperable)
 
-#### `bundleId`
+### `bundleId`
 
 **Type:** `string`
 
 When provided, bundle all the schemas into a single json schema document with schemas under $defs. The provided id is the id of the root document and is also used for the file name.
 
-#### `emitAllModels`
+### `emitAllModels`
 
 **Type:** `boolean`
 
 When true, emit all model declarations to JSON Schema without requiring the @jsonSchema decorator.
 
-#### `emitAllRefs`
+### `emitAllRefs`
 
 **Type:** `boolean`
 
@@ -95,6 +103,7 @@ When true, emit all references as json schema files, even if the referenced type
 - [`@minContains`](#@mincontains)
 - [`@minProperties`](#@minproperties)
 - [`@multipleOf`](#@multipleof)
+- [`@oneOf`](#@oneof)
 - [`@prefixItems`](#@prefixitems)
 - [`@uniqueItems`](#@uniqueitems)
 
@@ -193,13 +202,23 @@ media type and encoding.
 #### `@extension`
 
 Specify a custom property to add to the emitted schema. Useful for adding custom keywords
-and other vendor-specific extensions. The value will be converted to a schema unless the parameter
-is wrapped in the `Json<Data>` template. For example, `@extension("x-schema", { x: "value" })` will
-emit a JSON schema value for `x-schema`, whereas `@extension("x-schema", Json<{x: "value"}>)` will
-emit the raw JSON code `{x: "value"}`.
+and other vendor-specific extensions. Scalar values need to be specified using `typeof` to be converted to a schema.
+
+For example, `@extension("x-schema", typeof "foo")` will emit a JSON schema value for `x-schema`,
+whereas `@extension("x-schema", "foo")` will emit the raw code `"foo"`.
+
+The value will be treated as a raw value if any of the following are true:
+
+1. The value is a scalar value (e.g. string, number, boolean, etc.)
+2. The value is wrapped in the `Json<Data>` template
+3. The value is provided using the value syntax (e.g. `#{}`, `#[]`)
+
+For example, `@extension("x-schema", { x: "value" })` will emit a JSON schema value for `x-schema`,
+whereas `@extension("x-schema", #{x: "value"})` and `@extension("x-schema", Json<{x: "value"}>)`
+will emit the raw JSON code `{x: "value"}`.
 
 ```typespec
-@TypeSpec.JsonSchema.extension(key: valueof string, value: unknown)
+@TypeSpec.JsonSchema.extension(key: valueof string, value: unknown | valueof unknown)
 ```
 
 ##### Target
@@ -208,10 +227,10 @@ emit the raw JSON code `{x: "value"}`.
 
 ##### Parameters
 
-| Name  | Type             | Description                                                                             |
-| ----- | ---------------- | --------------------------------------------------------------------------------------- |
-| key   | `valueof string` | the name of the keyword of vendor extension, e.g. `x-custom`.                           |
-| value | `unknown`        | the value of the keyword. Will be converted to a schema unless wrapped in `Json<Data>`. |
+| Name  | Type                           | Description                                                   |
+| ----- | ------------------------------ | ------------------------------------------------------------- |
+| key   | `valueof string`               | the name of the keyword of vendor extension, e.g. `x-custom`. |
+| value | `unknown` \| `valueof unknown` | the value of the keyword.                                     |
 
 #### `@id`
 
@@ -347,6 +366,22 @@ Specify that the numeric type must be a multiple of some numeric value.
 | Name  | Type              | Description                                        |
 | ----- | ----------------- | -------------------------------------------------- |
 | value | `valueof numeric` | The numeric type must be a multiple of this value. |
+
+#### `@oneOf`
+
+Specify that `oneOf` should be used instead of `anyOf` for that union.
+
+```typespec
+@TypeSpec.JsonSchema.oneOf
+```
+
+##### Target
+
+`Union | ModelProperty`
+
+##### Parameters
+
+None
 
 #### `@prefixItems`
 

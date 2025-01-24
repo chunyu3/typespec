@@ -1,7 +1,7 @@
 import { getDirectoryPath } from "@typespec/compiler";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { PlaygroundSample } from "../types.js";
-import { PlaygroundSampleConfig } from "./types.js";
+import type { PlaygroundSample } from "../types.js";
+import type { PlaygroundSampleConfig } from "./types.js";
 
 /**
  * @experimental This API is experimental
@@ -9,7 +9,7 @@ import { PlaygroundSampleConfig } from "./types.js";
 export async function buildSamples_experimental(
   rootDir: string,
   output: string,
-  samples: Record<string, PlaygroundSampleConfig>
+  samples: Record<string, PlaygroundSampleConfig>,
 ) {
   const resolvedSamples: Record<string, PlaygroundSample> = {};
 

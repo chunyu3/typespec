@@ -1,5 +1,6 @@
+import { fail, ok } from "assert";
 import { fileURLToPath } from "url";
-import { NodeHost, resolvePath } from "../core/index.js";
+import { getTypeName, NodeHost, resolvePath, Type } from "../core/index.js";
 import { CompilerOptions } from "../core/options.js";
 import { findProjectRoot } from "../utils/misc.js";
 import {
@@ -8,6 +9,14 @@ import {
   TypeSpecTestLibrary,
   TypeSpecTestLibraryInit,
 } from "./types.js";
+
+export function resolveVirtualPath(path: string, ...paths: string[]) {
+  // NB: We should always resolve an absolute path, and there is no absolute
+  // path that works across OSes. This ensures that we can still rely on API
+  // like pathToFileURL in tests.
+  const rootDir = process.platform === "win32" ? "Z:/test" : "/test";
+  return resolvePath(rootDir, path, ...paths);
+}
 
 /** Find the package root from the provided file */
 export function findTestPackageRoot(fileUrl: string): Promise<string> {
@@ -29,7 +38,7 @@ export function createTestLibrary(init: TypeSpecTestLibraryInit): TypeSpecTestLi
       { realDir: "", pattern: "package.json", virtualPath: `./node_modules/${name}` },
       {
         realDir: typespecFileFolder,
-        pattern: "*.tsp",
+        pattern: "**/*.tsp",
         virtualPath: resolvePath(`./node_modules/${name}`, typespecFileFolder),
       },
       {
@@ -58,7 +67,7 @@ export interface TestWrapperOptions {
 }
 export function createTestWrapper(
   host: TestHost,
-  testWrapperOptions: TestWrapperOptions = {}
+  testWrapperOptions: TestWrapperOptions = {},
 ): BasicTestRunner {
   const {
     autoImports,
@@ -125,4 +134,23 @@ export function trimBlankLines(code: string) {
   }
 
   return code.slice(start, end);
+}
+
+/**
+ * Compare 2 TypeSpec type and make sure they are the exact same(a === b).
+ * Show a better diff than just having ok(a===b) while not crashing like strictEqual/expect.toEqual
+ */
+export function expectTypeEquals(actual: Type | undefined, expected: Type) {
+  if (actual === expected) return;
+
+  ok(actual, "Expected value to be defined");
+
+  const message = [`Expected type ${getTypeName(actual)} to be ${getTypeName(expected)}:`];
+  if (actual.kind !== expected.kind) {
+    message.push(`kind: ${actual.kind} !== ${expected.kind}`);
+  }
+  if ("symbol" in actual && "symbol" in expected) {
+    message.push(`symbol: ${expected && actual.symbol === expected.symbol}`);
+  }
+  fail(message.join("\n"));
 }

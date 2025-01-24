@@ -3,7 +3,6 @@ import {
   PopoverSurface,
   PopoverTrigger,
   Select,
-  SelectOnChangeData,
   Table,
   TableBody,
   TableCell,
@@ -11,8 +10,9 @@ import {
   TableHeaderCell,
   TableRow,
   Title3,
+  type SelectOnChangeData,
 } from "@fluentui/react-components";
-import { ChangeEvent, FunctionComponent, memo, useCallback } from "react";
+import { memo, useCallback, type ChangeEvent, type FunctionComponent } from "react";
 import { usePlaygroundContext } from "../context/playground-context.js";
 import { FooterItem } from "./footer-item.js";
 import style from "./footer-version-item.module.css";
@@ -107,7 +107,7 @@ const VersionSelector = memo(({ versions, selected, latest, onChange }: VersionS
     (ev: ChangeEvent<HTMLSelectElement>, data: SelectOnChangeData) => {
       onChange(versions.find((x) => x.name === data.value)!);
     },
-    [versions, onChange]
+    [versions, onChange],
   );
   return (
     <div>

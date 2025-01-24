@@ -1,3 +1,19 @@
+import {
+  BooleanLiteral,
+  getEncode,
+  IntrinsicScalarName,
+  isTemplateDeclaration,
+  Model,
+  ModelProperty,
+  NumericLiteral,
+  Program,
+  Scalar,
+  serializeValueAsJson,
+  StringLiteral,
+  Type,
+  Value,
+} from "@typespec/compiler";
+import { HttpOperation } from "@typespec/http";
 /**
  * Checks if two objects are deeply equal.
  *
@@ -28,7 +44,7 @@ export type EqualityComparer<T> = (x: T, y: T) => boolean;
 export function arrayEquals<T>(
   left: T[],
   right: T[],
-  equals: EqualityComparer<T> = (x, y) => x === y
+  equals: EqualityComparer<T> = (x, y) => x === y,
 ): boolean {
   if (left === right) {
     return true;
@@ -54,7 +70,7 @@ export function arrayEquals<T>(
 export function mapEquals<K, V>(
   left: Map<K, V>,
   right: Map<K, V>,
-  equals: EqualityComparer<V> = (x, y) => x === y
+  equals: EqualityComparer<V> = (x, y) => x === y,
 ): boolean {
   if (left === right) {
     return true;
@@ -68,4 +84,77 @@ export function mapEquals<K, V>(
     }
   }
   return true;
+}
+/**
+ * Check if argument is not undefined.
+ */
+export function isDefined<T>(arg: T | undefined): arg is T {
+  return arg !== undefined;
+}
+
+export interface SharedHttpOperation {
+  kind: "shared";
+  operations: HttpOperation[];
+}
+export function isSharedHttpOperation(
+  operation: HttpOperation | SharedHttpOperation,
+): operation is SharedHttpOperation {
+  return (operation as SharedHttpOperation).kind === "shared";
+}
+
+export function isStdType(
+  program: Program,
+  type: Type,
+): type is Scalar & { name: IntrinsicScalarName } {
+  return program.checker.isStdType(type);
+}
+
+export function isLiteralType(type: Type): type is StringLiteral | NumericLiteral | BooleanLiteral {
+  return type.kind === "Boolean" || type.kind === "String" || type.kind === "Number";
+}
+
+export function literalType(type: StringLiteral | NumericLiteral | BooleanLiteral) {
+  switch (type.kind) {
+    case "String":
+      return "string";
+    case "Number":
+      return "number";
+    case "Boolean":
+      return "boolean";
+  }
+}
+
+export function includeDerivedModel(model: Model): boolean {
+  return (
+    !isTemplateDeclaration(model) &&
+    (model.templateMapper?.args === undefined ||
+      model.templateMapper.args?.length === 0 ||
+      model.derivedModels.length > 0)
+  );
+}
+
+export function isScalarExtendsBytes(type: Type): boolean {
+  if (type.kind !== "Scalar") {
+    return false;
+  }
+  let current: Scalar | undefined = type;
+  while (current) {
+    if (current.name === "bytes") {
+      return true;
+    }
+    current = current.baseScalar;
+  }
+  return false;
+}
+
+export function getDefaultValue(
+  program: Program,
+  defaultType: Value,
+  modelProperty: ModelProperty,
+): any {
+  return serializeValueAsJson(program, defaultType, modelProperty);
+}
+
+export function isBytesKeptRaw(program: Program, type: Type) {
+  return type.kind === "Scalar" && type.name === "bytes" && getEncode(program, type) === undefined;
 }

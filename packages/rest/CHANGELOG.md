@@ -1,5 +1,84 @@
 # Change Log - @typespec/rest
 
+## 0.64.0
+
+### Bug Fixes
+
+- [#5455](https://github.com/microsoft/typespec/pull/5455) In some scenarios, the options for the `@path` decorator do not accurately reflect the provided parameters, including the `#{allowReserved: true}` which is the `x-ms-skip-url-encoding` option. This change addresses and fixes this issue.
+
+
+## 0.63.0
+
+No changes, version bump only.
+
+## 0.62.0
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+
+## 0.61.0
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+
+## 0.60.0
+
+### Features
+
+- [#4139](https://github.com/microsoft/typespec/pull/4139) Internals: Migrate to new api for declaring decorator implementation
+
+
+## 0.59.1
+
+### Bug Fixes
+
+- [#4155](https://github.com/microsoft/typespec/pull/4155) HotFix: Uri template not correctly built when using `@autoRoute`
+
+
+## 0.59.0
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+### Features
+
+- [#3932](https://github.com/microsoft/typespec/pull/3932) Add support for URI templates in routes
+
+
+## 0.58.0
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+
+## 0.57.0
+
+### Bug Fixes
+
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Update types to support new values in TypeSpec
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+
+## 0.56.0
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+### Features
+
+- [#2945](https://github.com/microsoft/typespec/pull/2945) Add support for new `@bodyRoot` and `@body` distinction
+
+
 ## 0.55.0
 
 ### Bump dependencies

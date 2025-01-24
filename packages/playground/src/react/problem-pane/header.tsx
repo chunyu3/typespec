@@ -1,7 +1,7 @@
 import { mergeClasses } from "@fluentui/react-components";
 import { ChevronDown16Regular, ErrorCircle16Filled, Warning16Filled } from "@fluentui/react-icons";
-import { MouseEventHandler, ReactNode, memo } from "react";
-import { CompilationState } from "../types.js";
+import { memo, type MouseEventHandler, type ReactNode } from "react";
+import type { CompilationState } from "../types.js";
 import style from "./header.module.css";
 
 export interface ProblemPaneHeaderProps {
@@ -64,7 +64,7 @@ const Container = ({ children, className, status, onClick, collaped }: Container
         style["header"],
         status === "error" && style["header--error"],
         status === "warning" && style["header--warning"],
-        className
+        className,
       )}
       onClick={onClick}
     >
@@ -72,7 +72,7 @@ const Container = ({ children, className, status, onClick, collaped }: Container
       <ChevronDown16Regular
         className={mergeClasses(
           style["header-chevron"],
-          collaped && style["header-chevron--collapsed"]
+          collaped && style["header-chevron--collapsed"],
         )}
       />
     </div>

@@ -1,5 +1,159 @@
 # Change Log - @typespec/openapi3
 
+## 0.64.0
+
+### Bug Fixes
+
+- [234eaeb](https://github.com/microsoft/typespec/commit/234eaeb223b85689f73ac3971e09f26c985f6c87) Allow void to be the response body type when other fields are present in the model. Previously, using `void` as a response body type would fail compilation if the model contained other fields (like `statusCode`).
+- [#5456](https://github.com/microsoft/typespec/pull/5456) Fix: OpenAPI YAML converts strings to boolean
+
+### Features
+
+- [#5372](https://github.com/microsoft/typespec/pull/5372) Adds support for @typespec/json-schema decorators with Open API 3.0 and 3.1 emitters.
+- [#5372](https://github.com/microsoft/typespec/pull/5372) Adds support for emitting Open API 3.1 models using the `openapi-versions` emitter configuration option.
+Open API 3.0 is emitted by default.
+
+
+## 0.63.0
+
+### Bug Fixes
+
+- [#5006](https://github.com/microsoft/typespec/pull/5006) Illegal characters in component keys
+- [#5274](https://github.com/microsoft/typespec/pull/5274) Added missing peer dependency "openapi-types"
+
+### Features
+
+- [#5029](https://github.com/microsoft/typespec/pull/5029) Add support for `#deprecated` for OpenAPI3Parameter
+
+
+## 0.62.0
+
+### Bug Fixes
+
+- [#4663](https://github.com/microsoft/typespec/pull/4663) Discriminator properties are marked as required regardless if they are in TypeSpec to match OpenAPI3 spec.
+- [#4934](https://github.com/microsoft/typespec/pull/4934) tsp-openapi3 - fixes typespec generation for empty schema
+- [#4727](https://github.com/microsoft/typespec/pull/4727) Nullable enum use `allOf` instead of `oneOf`
+- [#4708](https://github.com/microsoft/typespec/pull/4708) Updates tsp-openapi3 to include path-level parameters in generated typespec operations.
+- [#4873](https://github.com/microsoft/typespec/pull/4873) Updates tsp-openapi3 query decorator generation to use the value arguments.
+- [#4672](https://github.com/microsoft/typespec/pull/4672) OpenAPI3 type property should always be set when nullable property is present.
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+### Features
+
+- [#4761](https://github.com/microsoft/typespec/pull/4761) Add `@cookie` decorator to specify cookie parameters
+- [#4214](https://github.com/microsoft/typespec/pull/4214) Add XML support using `@typespec/xml` library
+- [#4834](https://github.com/microsoft/typespec/pull/4834) Add support for `@tagMetadata` decorator
+- [#4906](https://github.com/microsoft/typespec/pull/4906) Updates tsp-openapi3 to support generating `@summary` decorators for models and operations from schema title and path item summary fields.
+
+
+## 0.61.0
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+### Features
+
+- [#4423](https://github.com/microsoft/typespec/pull/4423) Added support to use Scalar and Object as default types
+
+
+## 0.60.0
+
+### Bug Fixes
+
+- [#4133](https://github.com/microsoft/typespec/pull/4133) Fix Bug for OpenAPI 3 Emitter crash on `@useAuth({})`
+- [#4123](https://github.com/microsoft/typespec/pull/4123) Fix OpenAPI3 union names when declared within a namespace
+- [#4216](https://github.com/microsoft/typespec/pull/4216) Fixes issue in tsp-openapi3 that resulted in component schemas and parameters with the same name being merged into a single TypeSpec data type.
+- [#4232](https://github.com/microsoft/typespec/pull/4232) Improves tsp-openapi3 model generation from schemas utilizing allOf. Models will now extend an allOf member if it is a schema reference and the only member with a discriminator. Other members will be spread into the model if defined as a schema reference, or have their properties treated as top-level properties if they are an inline-schema.
+- [#4149](https://github.com/microsoft/typespec/pull/4149) Updates tsp-openapi3 conversion of OpenAPI3 component schemas to improve handling of enums, unions, scalars, and aliases.
+
+### Features
+
+- [#4139](https://github.com/microsoft/typespec/pull/4139) Internals: Migrate to new api for declaring decorator implementation
+
+
+## 0.59.1
+
+### Bug Fixes
+
+- [#4168](https://github.com/microsoft/typespec/pull/4168) Fix: query params are `explode: true` by default in OpenAPI 3.0
+
+
+## 0.59.0
+
+### Bug Fixes
+
+- [#4046](https://github.com/microsoft/typespec/pull/4046) Fix issue where operation example would produce an empty object when `@body`/`@bodyRoot` was used
+- [#4046](https://github.com/microsoft/typespec/pull/4046) Fix operation response body examples showing up for each response.
+- [#3912](https://github.com/microsoft/typespec/pull/3912) Fixes bug where union documentation was being applied to each union member in emitted output.
+- [#3908](https://github.com/microsoft/typespec/pull/3908) Fixes bug where circular references in unions caused an empty object to be emitted instead of a ref.
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+### Features
+
+- [#3894](https://github.com/microsoft/typespec/pull/3894) Add support for `@useRef` on responses
+- [#4020](https://github.com/microsoft/typespec/pull/4020) Add support for encoding numeric types as string
+- [#3890](https://github.com/microsoft/typespec/pull/3890) `@extension` used on the service namespace will set extension at the root of the document
+- [#3932](https://github.com/microsoft/typespec/pull/3932) Add support for URI templates in routes
+
+
+## 0.58.0
+
+### Bug Fixes
+
+- [#3516](https://github.com/microsoft/typespec/pull/3516) Fix issue that could result in invalid document generation when running `tsp compile` from another directory
+- [#3794](https://github.com/microsoft/typespec/pull/3794) Updates tsp-openapi3 to always emit main.tsp when formatting encounters an error.
+- [#3839](https://github.com/microsoft/typespec/pull/3839) Updates tsp-openapi3 doc line wrapping to only automatically create newlines when they are present in the original documentation.
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+### Features
+
+- [#3572](https://github.com/microsoft/typespec/pull/3572) Add support for new `@example` and `@opExample` decorator
+- [#3663](https://github.com/microsoft/typespec/pull/3663) Adds support for converting OpenAPI3 specs to TypeSpec via the new tsp-openapi3 CLI included in the `@typespec/openapi3` package.
+- [#3732](https://github.com/microsoft/typespec/pull/3732) Apply openapi3 extension on Security schemes
+- [#3844](https://github.com/microsoft/typespec/pull/3844) Updates tsp-openapi3 to escape identifiers that would otherwise be invalid, and automatically resolve namespaces for schemas with dots in their names.
+
+
+## 0.57.0
+
+### Bug Fixes
+
+- [#3342](https://github.com/microsoft/typespec/pull/3342) Add support for new multipart constructs in http library
+- [#3574](https://github.com/microsoft/typespec/pull/3574) Emit diagnostic when an invalid type is used as a property instead of crashing.
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+### Features
+
+- [#3022](https://github.com/microsoft/typespec/pull/3022) Add support for new object and array values as default values (e.g. `decimals: decimal[] = #[123, 456.7];`)
+
+
+## 0.56.0
+
+### Bug Fixes
+
+- [#3218](https://github.com/microsoft/typespec/pull/3218) Fix: `@path` property should be included in unreachable models
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+### Features
+
+- [#2945](https://github.com/microsoft/typespec/pull/2945) Add support for new `@bodyRoot` and `@body` distinction
+
+
 ## 0.55.0
 
 ### Bug Fixes

@@ -9,18 +9,25 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`HTTP verb already applied to ${"entityName"}`,
       },
     },
-    "http-verb-wrong-type": {
+    "missing-uri-param": {
       severity: "error",
       messages: {
-        default: paramMessage`Cannot use @${"verb"} on a ${"entityKind"}`,
+        default: paramMessage`Route reference parameter '${"param"}' but wasn't found in operation parameters`,
       },
     },
-    "missing-path-param": {
+    "incompatible-uri-param": {
       severity: "error",
       messages: {
-        default: paramMessage`Path contains parameter ${"param"} but wasn't found in given parameters`,
+        default: paramMessage`Parameter '${"param"}' is defined in the uri as a ${"uriKind"} but is annotated as a ${"annotationKind"}.`,
       },
     },
+    "use-uri-template": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Parameter '${"param"}' is already defined in the uri template. Explode, style and allowReserved property must be defined in the uri template as described by RFC 6570.`,
+      },
+    },
+
     "optional-path-param": {
       severity: "error",
       messages: {
@@ -93,6 +100,12 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`${"kind"} property will be ignored as it is inside of a @body property. Use @bodyRoot instead if wanting to mix.`,
       },
     },
+    "response-cookie-not-supported": {
+      severity: "warning",
+      messages: {
+        default: paramMessage`@cookie on response is not supported. Property '${"propName"}' will be ignored in the body. If you need 'Set-Cookie', use @header instead.`,
+      },
+    },
     "no-service-found": {
       severity: "warning",
       messages: {
@@ -117,10 +130,40 @@ export const $lib = createTypeSpecLibrary({
         default: `@visibility("write") is not supported. Use @visibility("update"), @visibility("create") or @visibility("create", "update") as appropriate.`,
       },
     },
+    "multipart-invalid-content-type": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Content type '${"contentType"}' is not a multipart content type. Supported content types are: ${"supportedContentTypes"}.`,
+      },
+    },
     "multipart-model": {
       severity: "error",
       messages: {
         default: "Multipart request body must be a model.",
+      },
+    },
+    "multipart-part": {
+      severity: "error",
+      messages: {
+        default: "Expect item to be an HttpPart model.",
+      },
+    },
+    "multipart-nested": {
+      severity: "error",
+      messages: {
+        default: "Cannot use @multipartBody inside of an HttpPart",
+      },
+    },
+    "http-file-extra-property": {
+      severity: "error",
+      messages: {
+        default: paramMessage`File model cannot define extra properties. Found '${"propName"}'.`,
+      },
+    },
+    "formdata-no-part-name": {
+      severity: "error",
+      messages: {
+        default: "Part used in multipart/form-data must have a name.",
       },
     },
     "header-format-required": {
@@ -129,21 +172,17 @@ export const $lib = createTypeSpecLibrary({
         default: `A format must be specified for @header when type is an array. e.g. @header({format: "csv"})`,
       },
     },
-    "query-format-required": {
-      severity: "error",
-      messages: {
-        default: `A format must be specified for @query when type is an array. e.g. @query({format: "multi"})`,
-      },
-    },
   },
   state: {
     authentication: { description: "State for the @auth decorator" },
     header: { description: "State for the @header decorator" },
+    cookie: { description: "State for the @cookie decorator" },
     query: { description: "State for the @query decorator" },
     path: { description: "State for the @path decorator" },
     body: { description: "State for the @body decorator" },
     bodyRoot: { description: "State for the @bodyRoot decorator" },
     bodyIgnore: { description: "State for the @bodyIgnore decorator" },
+    multipartBody: { description: "State for the @bodyIgnore decorator" },
     statusCode: { description: "State for the @statusCode decorator" },
     verbs: { description: "State for the verb decorators (@get, @post, @put, etc.)" },
     servers: { description: "State for the @server decorator" },
@@ -157,7 +196,11 @@ export const $lib = createTypeSpecLibrary({
     routes: {},
     sharedRoutes: { description: "State for the @sharedRoute decorator" },
     routeOptions: {},
+
+    // private
+    file: { description: "State for the @Private.file decorator" },
+    httpPart: { description: "State for the @Private.httpPart decorator" },
   },
-} as const);
+});
 
 export const { reportDiagnostic, createDiagnostic, stateKeys: HttpStateKeys } = $lib;

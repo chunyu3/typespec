@@ -1,6 +1,5 @@
 import {
   compilerAssert,
-  DiagnosticCollector,
   getEffectiveModelType,
   getParameterVisibility,
   isVisible as isVisibleCore,
@@ -8,18 +7,18 @@ import {
   ModelProperty,
   Operation,
   Program,
-  Queue,
-  TwoLevelMap,
   Type,
   Union,
-  walkPropertiesInherited,
 } from "@typespec/compiler";
+import { TwoLevelMap } from "@typespec/compiler/utils";
 import {
   includeInapplicableMetadataInPayload,
   isBody,
   isBodyIgnore,
   isBodyRoot,
+  isCookieParam,
   isHeader,
+  isMultipartBodyProperty,
   isPathParam,
   isQueryParam,
   isStatusCode,
@@ -131,7 +130,7 @@ function arrayToVisibility(array: readonly string[] | undefined): Visibility | u
  *  */
 export function getVisibilitySuffix(
   visibility: Visibility,
-  canonicalVisibility: Visibility | undefined = Visibility.None
+  canonicalVisibility: Visibility | undefined = Visibility.None,
 ) {
   let suffix = "";
 
@@ -206,11 +205,12 @@ export function getRequestVisibility(verb: HttpVerb): Visibility {
 export function resolveRequestVisibility(
   program: Program,
   operation: Operation,
-  verb: HttpVerb
+  verb: HttpVerb,
 ): Visibility {
-  const parameterVisibility = arrayToVisibility(getParameterVisibility(program, operation));
+  const parameterVisibility = getParameterVisibility(program, operation);
+  const parameterVisibilityArray = arrayToVisibility(parameterVisibility);
   const defaultVisibility = getDefaultVisibilityForVerb(verb);
-  let visibility = parameterVisibility ?? defaultVisibility;
+  let visibility = parameterVisibilityArray ?? defaultVisibility;
   // If the verb is PATCH, then we need to add the patch flag to the visibility in order for
   // later processes to properly apply it
   if (verb === "patch") {
@@ -220,78 +220,13 @@ export function resolveRequestVisibility(
 }
 
 /**
- * Walks the given type and collects all applicable metadata and `@body`
- * properties recursively.
- *
- * @param rootMapOut If provided, the map will be populated to link
- * nested metadata properties to their root properties.
- */
-export function gatherMetadata(
-  program: Program,
-  diagnostics: DiagnosticCollector, // currently unused, but reserved for future diagnostics
-  type: Type,
-  visibility: Visibility,
-  isMetadataCallback = isMetadata,
-  rootMapOut?: Map<ModelProperty, ModelProperty>
-): Set<ModelProperty> {
-  const metadata = new Map<string, ModelProperty>();
-  if (type.kind !== "Model" || type.indexer || type.properties.size === 0) {
-    return new Set();
-  }
-
-  const visited = new Set();
-  const queue = new Queue<[Model, ModelProperty | undefined]>([[type, undefined]]);
-
-  while (!queue.isEmpty()) {
-    const [model, rootOpt] = queue.dequeue();
-    visited.add(model);
-
-    for (const property of walkPropertiesInherited(model)) {
-      const root = rootOpt ?? property;
-
-      if (!isVisible(program, property, visibility)) {
-        continue;
-      }
-
-      // ISSUE: This should probably be an error, but that's a breaking
-      // change that currently breaks some samples and tests.
-      //
-      // The traversal here is level-order so that the preferred metadata in
-      // the case of duplicates, which is the most compatible with prior
-      // behavior where nested metadata was always dropped.
-      if (metadata.has(property.name)) {
-        continue;
-      }
-
-      if (isApplicableMetadataOrBody(program, property, visibility, isMetadataCallback)) {
-        metadata.set(property.name, property);
-        rootMapOut?.set(property, root);
-        if (isBody(program, property)) {
-          continue; // We ignore any properties under `@body`
-        }
-      }
-
-      if (
-        property.type.kind === "Model" &&
-        !type.indexer &&
-        type.properties.size > 0 &&
-        !visited.has(property.type)
-      ) {
-        queue.enqueue([property.type, root]);
-      }
-    }
-  }
-
-  return new Set(metadata.values());
-}
-
-/**
  * Determines if a property is metadata. A property is defined to be
- * metadata if it is marked `@header`, `@query`, `@path`, or `@statusCode`.
+ * metadata if it is marked `@header`, `@cookie`, `@query`, `@path`, or `@statusCode`.
  */
 export function isMetadata(program: Program, property: ModelProperty) {
   return (
     isHeader(program, property) ||
+    isCookieParam(program, property) ||
     isQueryParam(program, property) ||
     isPathParam(program, property) ||
     isStatusCode(program, property)
@@ -302,6 +237,7 @@ export function isMetadata(program: Program, property: ModelProperty) {
  * Determines if the given property is visible with the given visibility.
  */
 export function isVisible(program: Program, property: ModelProperty, visibility: Visibility) {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
   return isVisibleCore(program, property, visibilityToArray(visibility));
 }
 
@@ -319,7 +255,7 @@ export function isApplicableMetadata(
   program: Program,
   property: ModelProperty,
   visibility: Visibility,
-  isMetadataCallback = isMetadata
+  isMetadataCallback = isMetadata,
 ) {
   return isApplicableMetadataCore(program, property, visibility, false, isMetadataCallback);
 }
@@ -332,7 +268,7 @@ export function isApplicableMetadataOrBody(
   program: Program,
   property: ModelProperty,
   visibility: Visibility,
-  isMetadataCallback = isMetadata
+  isMetadataCallback = isMetadata,
 ) {
   return isApplicableMetadataCore(program, property, visibility, true, isMetadataCallback);
 }
@@ -342,13 +278,18 @@ function isApplicableMetadataCore(
   property: ModelProperty,
   visibility: Visibility,
   treatBodyAsMetadata: boolean,
-  isMetadataCallback: (program: Program, property: ModelProperty) => boolean
+  isMetadataCallback: (program: Program, property: ModelProperty) => boolean,
 ) {
   if (visibility & Visibility.Item) {
     return false; // no metadata is applicable to collection items
   }
 
-  if (treatBodyAsMetadata && (isBody(program, property) || isBodyRoot(program, property))) {
+  if (
+    treatBodyAsMetadata &&
+    (isBody(program, property) ||
+      isBodyRoot(program, property) ||
+      isMultipartBodyProperty(program, property))
+  ) {
     return true;
   }
 
@@ -356,7 +297,7 @@ function isApplicableMetadataCore(
     return false;
   }
 
-  if (visibility === Visibility.Read) {
+  if (visibility & Visibility.Read) {
     return isHeader(program, property) || isStatusCode(program, property);
   }
 
@@ -402,7 +343,7 @@ export interface MetadataInfo {
   isPayloadProperty(
     property: ModelProperty,
     visibility: Visibility,
-    inExplicitBody?: boolean
+    inExplicitBody?: boolean,
   ): boolean;
 
   /**
@@ -486,7 +427,7 @@ export function createMetadataInfo(program: Program, options?: MetadataInfoOptio
       type,
       visibility,
       () => computeState(type, visibility),
-      State.ComputationInProgress
+      State.ComputationInProgress,
     );
   }
 
@@ -538,6 +479,7 @@ export function createMetadataInfo(program: Program, options?: MetadataInfoOptio
     if (isOptional(property, canonicalVisibility) !== isOptional(property, visibility)) {
       return true;
     }
+
     return (
       isPayloadProperty(property, visibility, undefined, /* keep shared */ true) !==
       isPayloadProperty(property, canonicalVisibility, undefined, /*keep shared*/ true)
@@ -570,7 +512,7 @@ export function createMetadataInfo(program: Program, options?: MetadataInfoOptio
     property: ModelProperty,
     visibility: Visibility,
     inExplicitBody?: boolean,
-    keepShareableProperties?: boolean
+    keepShareableProperties?: boolean,
   ): boolean {
     if (
       !inExplicitBody &&
@@ -601,12 +543,12 @@ export function createMetadataInfo(program: Program, options?: MetadataInfoOptio
 
   /**
    * If the type is an anonymous model, tries to find a named model that has the same
-   * set of properties when non-payload properties are excluded.
+   * set of properties when non-payload properties are excluded.we
    */
   function getEffectivePayloadType(type: Type, visibility: Visibility): Type {
     if (type.kind === "Model" && !type.name) {
       const effective = getEffectiveModelType(program, type, (p) =>
-        isPayloadProperty(p, visibility, undefined, /* keep shared */ false)
+        isPayloadProperty(p, visibility, undefined, /* keep shared */ false),
       );
       if (effective.name) {
         return effective;

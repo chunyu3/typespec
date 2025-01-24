@@ -1,18 +1,18 @@
-import {
+import { compilerAssert } from "../core/diagnostics.js";
+import { emitFile } from "../core/emitter-utils.js";
+import type { Program } from "../core/program.js";
+import { isTemplateDeclaration } from "../core/type-utils.js";
+import type {
   BooleanLiteral,
-  compilerAssert,
-  emitFile,
   Enum,
   EnumMember,
   Interface,
   IntrinsicType,
-  isTemplateDeclaration,
   Model,
   ModelProperty,
   Namespace,
   NumericLiteral,
   Operation,
-  Program,
   Scalar,
   StringLiteral,
   StringTemplate,
@@ -20,8 +20,8 @@ import {
   Type,
   Union,
   UnionVariant,
-} from "../core/index.js";
-import { code, StringBuilder } from "./builders/string-builder.js";
+} from "../core/types.js";
+import { StringBuilder, code } from "./builders/string-builder.js";
 import { Placeholder } from "./placeholder.js";
 import { resolveDeclarationReferenceScope } from "./ref-scope.js";
 import { ReferenceCycle } from "./reference-cycle.js";
@@ -118,7 +118,7 @@ export type EmitterOutput<T> = EmitEntity<T> | Placeholder<T> | T;
  *   literals, and any type referenced inside anywhere inside the model and any
  *   of the referenced types' references.
  *
- * In both cases, context is an object. It strongly recommended that the context
+ * In both cases, context is an object. It's strongly recommended that the context
  * object either contain only primitive types, or else only reference immutable
  * objects.
  *
@@ -724,7 +724,7 @@ export class TypeEmitter<T, TOptions extends object = Record<string, never>> {
     targetDeclaration: Declaration<T>,
     pathUp: Scope<T>[],
     pathDown: Scope<T>[],
-    commonScope: Scope<T> | null
+    commonScope: Scope<T> | null,
   ): EmitEntity<T> | T {
     return this.emitter.result.none();
   }
@@ -739,11 +739,11 @@ export class TypeEmitter<T, TOptions extends object = Record<string, never>> {
   circularReference(
     target: EmitEntity<T>,
     scope: Scope<T> | undefined,
-    cycle: ReferenceCycle
+    cycle: ReferenceCycle,
   ): EmitEntity<T> | T {
     if (!cycle.containsDeclaration) {
       throw new Error(
-        `Circular references to non-declarations are not supported by this emitter. Cycle:\n${cycle}`
+        `Circular references to non-declarations are not supported by this emitter. Cycle:\n${cycle}`,
       );
     }
     if (target.kind !== "declaration") {
@@ -751,7 +751,7 @@ export class TypeEmitter<T, TOptions extends object = Record<string, never>> {
     }
     compilerAssert(
       scope,
-      "Emit context must have a scope set in order to create references to declarations."
+      "Emit context must have a scope set in order to create references to declarations.",
     );
     const { pathUp, pathDown, commonScope } = resolveDeclarationReferenceScope(target, scope);
     return this.reference(target, pathUp, pathDown, commonScope);
@@ -760,7 +760,7 @@ export class TypeEmitter<T, TOptions extends object = Record<string, never>> {
   declarationName(declarationType: TypeSpecDeclaration): string | undefined {
     compilerAssert(
       declarationType.name !== undefined,
-      "Can't emit a declaration that doesn't have a name."
+      "Can't emit a declaration that doesn't have a name.",
     );
 
     if (declarationType.kind === "Enum" || declarationType.kind === "Intrinsic") {
@@ -780,6 +780,12 @@ export class TypeEmitter<T, TOptions extends object = Record<string, never>> {
     let unspeakable = false;
 
     const parameterNames = declarationType.templateMapper.args.map((t) => {
+      if (t.entityKind === "Indeterminate") {
+        t = t.type;
+      }
+      if (!("kind" in t)) {
+        return undefined;
+      }
       switch (t.kind) {
         case "Model":
         case "Scalar":
@@ -840,7 +846,7 @@ export class CodeTypeEmitter<TOptions extends object = Record<string, never>> ex
     for (const op of iface.operations.values()) {
       i++;
       builder.push(
-        code`${this.emitter.emitInterfaceOperation(op)}${i < iface.operations.size ? "," : ""}`
+        code`${this.emitter.emitInterfaceOperation(op)}${i < iface.operations.size ? "," : ""}`,
       );
     }
     return builder.reduce();
@@ -871,7 +877,6 @@ export class CodeTypeEmitter<TOptions extends object = Record<string, never>> ex
     let i = 0;
     for (const v of tuple.values) {
       i++;
-      ``;
       builder.push(code`${this.emitter.emitTypeReference(v)}${i < tuple.values.length ? "," : ""}`);
     }
     return builder.reduce();
@@ -881,7 +886,7 @@ export class CodeTypeEmitter<TOptions extends object = Record<string, never>> ex
     targetDeclaration: Declaration<string>,
     pathUp: Scope<string>[],
     pathDown: Scope<string>[],
-    commonScope: Scope<string> | null
+    commonScope: Scope<string> | null,
   ): string | EmitEntity<string> {
     const basePath = pathDown.map((s) => s.name).join(".");
     return basePath

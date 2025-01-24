@@ -1,5 +1,5 @@
 import { deepStrictEqual, notStrictEqual, ok, strictEqual } from "assert";
-import { beforeEach, describe, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isTemplateDeclaration } from "../../src/core/type-utils.js";
 import { Interface, Model, Operation, Type } from "../../src/core/types.js";
 import { getDoc } from "../../src/index.js";
@@ -34,7 +34,7 @@ describe("compiler: interfaces", () => {
       @test @blue interface Foo {
         @blue bar(): string;
       }
-      `
+      `,
     );
 
     const { Foo } = (await testHost.compile("./")) as {
@@ -60,7 +60,7 @@ describe("compiler: interfaces", () => {
         bar(): string;
         bar(): int32;
       }
-      `
+      `,
     );
 
     const diagnostics = await testHost.diagnose("./");
@@ -79,7 +79,7 @@ describe("compiler: interfaces", () => {
       }
 
       alias Bar = Foo<int32>;
-      `
+      `,
     );
 
     const { Foo } = (await testHost.compile("./")) as {
@@ -102,7 +102,7 @@ describe("compiler: interfaces", () => {
       }
 
       alias Baz = Foo<int32>;
-      `
+      `,
     );
 
     const { Foo } = (await testHost.compile("./")) as {
@@ -110,7 +110,7 @@ describe("compiler: interfaces", () => {
     };
     deepStrictEqual(
       Foo.sourceInterfaces.map((i) => i.name),
-      ["Bar"]
+      ["Bar"],
     );
     strictEqual(Foo.operations.size, 2);
     ok(Foo.operations.get("foo"));
@@ -129,7 +129,7 @@ describe("compiler: interfaces", () => {
       }
 
       alias Qux = Foo<int32>;
-      `
+      `,
     );
 
     const { Foo } = (await testHost.compile("./")) as {
@@ -137,7 +137,7 @@ describe("compiler: interfaces", () => {
     };
     deepStrictEqual(
       Foo.sourceInterfaces.map((i) => i.name),
-      ["Bar", "Baz"]
+      ["Bar", "Baz"],
     );
     strictEqual(Foo.operations.size, 3);
     ok(Foo.operations.get("foo"));
@@ -162,7 +162,7 @@ describe("compiler: interfaces", () => {
       @test interface Bar extends Foo {
         bar(): int32;
       }
-      `
+      `,
     );
 
     const { Bar } = (await testHost.compile("./")) as {
@@ -189,7 +189,7 @@ describe("compiler: interfaces", () => {
       import "./test.js";
       interface Foo { @blue foo(): int32 }
       @test interface Bar extends Foo {}
-      `
+      `,
     );
 
     const { Bar } = (await testHost.compile("./")) as {
@@ -207,7 +207,7 @@ describe("compiler: interfaces", () => {
       interface Bar { bar(): int32 }
       interface Baz { bar(): int32 }
       @test interface Foo extends Bar, Baz { }
-      `
+      `,
     );
 
     const diagnostics = await testHost.diagnose("./");
@@ -223,7 +223,7 @@ describe("compiler: interfaces", () => {
       `
       interface Bar { bar(): int32 }
       @test interface Foo extends Bar { bar(): string }
-      `
+      `,
     );
 
     const { Foo } = (await testHost.compile("./")) as {
@@ -240,7 +240,7 @@ describe("compiler: interfaces", () => {
       `
       model Bar { }
       @test interface Foo extends Bar { bar(): string }
-      `
+      `,
     );
 
     const diagnostics = await testHost.diagnose("./");
@@ -264,7 +264,7 @@ describe("compiler: interfaces", () => {
       `
       import "./dec.js";
       @blue interface A<T> { @blue foo(): int32}
-      `
+      `,
     );
     await testHost.compile("./");
     strictEqual(calls, 0);
@@ -410,6 +410,44 @@ describe("compiler: interfaces", () => {
       strictEqual(returnType.name, "int32");
     });
 
+    it("instantiating an templated interface doesn't finish template operation inside", async () => {
+      const $track = vi.fn();
+      testHost.addJsFile("dec.js", { $track });
+      testHost.addTypeSpecFile(
+        "main.tsp",
+        `
+        import "./dec.js";
+         
+         interface Base<A> {
+          @track bar<B>(input: A): B;
+        }
+
+        alias My = Base<string>;
+        `,
+      );
+      await testHost.compile("./");
+      expect($track).not.toHaveBeenCalled();
+    });
+
+    it("templated interface extending another templated interface doesn't run decorator on extended interface operations", async () => {
+      const $track = vi.fn();
+      testHost.addJsFile("dec.js", { $track });
+      testHost.addTypeSpecFile(
+        "main.tsp",
+        `
+        import "./dec.js";
+         
+        interface Base<T> {
+          @track bar(): T;
+        }
+
+        interface Foo<T> extends Base<T> {}
+        `,
+      );
+      await testHost.compile("./");
+      expect($track).not.toHaveBeenCalled();
+    });
+
     it("emit warning if shadowing parent templated type", async () => {
       const diagnostics = await runner.diagnose(`
       interface Base<A> {
@@ -470,7 +508,7 @@ describe("compiler: interfaces", () => {
       @test interface Base {@doc("base doc") one(): void}
       @test interface Extending extends Base {}
       @@doc(Extending.one, "override for spread");
-      `
+      `,
     );
     const { Base, Extending } = (await testHost.compile("main.tsp")) as {
       Base: Interface;

@@ -1,8 +1,8 @@
 import { deepStrictEqual, strictEqual } from "assert";
-import { describe, it } from "vitest";
-import { openApiFor } from "./test-host.js";
+import { it } from "vitest";
+import { worksFor } from "./works-for.js";
 
-describe("openapi3: info", () => {
+worksFor(["3.0.0", "3.1.0"], ({ openApiFor }) => {
   it("set the service title with @service", async () => {
     const res = await openApiFor(
       `
@@ -10,7 +10,7 @@ describe("openapi3: info", () => {
       namespace Foo {
         op test(): string;
       }
-      `
+      `,
     );
     strictEqual(res.info.title, "My Service");
   });
@@ -25,7 +25,7 @@ describe("openapi3: info", () => {
       namespace Foo {
         op test(): string;
       }
-      `
+      `,
     );
     strictEqual(res.info.version, "1.2.3-test");
   });
@@ -38,7 +38,7 @@ describe("openapi3: info", () => {
       namespace Foo {
         op test(): string;
       }
-      `
+      `,
     );
     strictEqual(res.info.description, "My service description");
   });
@@ -50,7 +50,7 @@ describe("openapi3: info", () => {
       namespace Foo {
         op test(): string;
       }
-      `
+      `,
     );
     deepStrictEqual(res.externalDocs, {
       url: "https://example.com",
@@ -77,7 +77,7 @@ describe("openapi3: info", () => {
       namespace Foo {
         op test(): string;
       }
-      `
+      `,
     );
     deepStrictEqual(res.info, {
       title: "(title)",

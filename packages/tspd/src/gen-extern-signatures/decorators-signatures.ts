@@ -1,13 +1,13 @@
 import {
   DocTag,
-  FunctionParameter,
   IntrinsicScalarName,
+  MixedFunctionParameter,
+  MixedParameterConstraint,
   Model,
   Program,
   Scalar,
   SyntaxKind,
   Type,
-  ValueType,
   getSourceLocation,
   isArrayModelType,
   isUnknownType,
@@ -17,73 +17,84 @@ import { DecoratorSignature } from "./types.js";
 
 const line = "\n";
 export function generateSignatureTests(
+  namespaceName: string,
   importName: string,
   decoratorSignatureImport: string,
-  decorators: DecoratorSignature[]
+  decorators: DecoratorSignature[],
 ): string {
   const content: Doc[] = [];
+  const decRecord = getDecoratorRecordForNamespaceName(namespaceName);
   content.push([
     "/** An error here would mean that the decorator is not exported or doesn't have the right name. */",
     line,
-    "import {",
-    decorators.map((x) => x.jsName).join(","),
-    `} from "`,
+    `import { $decorators } from "`,
     importName,
     `";`,
     line,
   ]);
 
-  content.push([
-    "import {",
-    decorators.map((x) => x.typeName).join(","),
-    `} from "`,
-    decoratorSignatureImport,
-    `";`,
-    line,
-  ]);
-  content.push(line);
-
-  content.push([
-    "type Decorators = {",
-    line,
-    decorators.map((x) => renderDoc([x.jsName, ": ", x.typeName])).join(","),
-
-    "};",
-    line,
-  ]);
+  content.push(`import type { ${decRecord} } from "${decoratorSignatureImport}";`);
 
   content.push(line);
 
   content.push([
     "/** An error here would mean that the exported decorator is not using the same signature. Make sure to have export const $decName: DecNameDecorator = (...) => ... */",
     line,
-    "const _: Decorators = {",
-    line,
-    decorators.map((x) => x.jsName).join(","),
-
-    "};",
-    line,
+    `const _: ${decRecord} = $decorators["${namespaceName}"]`,
   ]);
   return renderDoc(content);
 }
 
-export function generateSignatures(program: Program, decorators: DecoratorSignature[]): string {
+function getDecoratorRecordForNamespaceName(namespaceName: string) {
+  return `${namespaceName.replaceAll(".", "")}Decorators`;
+}
+export function generateSignatures(
+  program: Program,
+  decorators: DecoratorSignature[],
+  namespaceName: string,
+): string {
   const compilerImports = new Set<string>();
+  const localTypes = new Set<Model>();
   const decoratorDeclarations: string[] = decorators.map((x) => getTSSignatureForDecorator(x));
 
   const importArray = [...compilerImports].sort();
+
+  const localTypeDeclarations = [];
+  for (const item of localTypes) {
+    localTypeDeclarations.push(declareInterfaceForModel(item));
+  }
   const content: Doc = [
     `import type {${importArray.join(",")}} from "@typespec/compiler";`,
     line,
     line,
+    localTypeDeclarations.join("\n\n"),
+    line,
+    line,
     decoratorDeclarations.join("\n\n"),
+    line,
+    line,
   ];
+
+  content.push([
+    `export type ${getDecoratorRecordForNamespaceName(namespaceName)} = {`,
+    line,
+    decorators.map((x) => renderDoc([x.name.slice(1), ": ", x.typeName])).join(","),
+    "};",
+    line,
+  ]);
+
+  content.push(line);
 
   return renderDoc(content);
 
   function useCompilerType(name: string) {
     compilerImports.add(name);
     return name;
+  }
+
+  function useLocalType(type: Model) {
+    localTypes.add(type);
+    return type.name;
   }
 
   function getTSSignatureForDecorator({ typeName, decorator }: DecoratorSignature): string {
@@ -99,12 +110,12 @@ export function generateSignatures(program: Program, decorators: DecoratorSignat
       " = ",
       `(context: ${useCompilerType("DecoratorContext")}, ${getTSParameter(
         decorator.target,
-        true
+        true,
       )}${args}) => void;`,
     ].join("");
   }
 
-  function getTSParameter(param: FunctionParameter, isTarget?: boolean): string {
+  function getTSParameter(param: MixedFunctionParameter, isTarget?: boolean): string {
     const optional = param.optional ? "?" : "";
     const rest = param.rest ? "..." : "";
     if (rest) {
@@ -114,25 +125,58 @@ export function generateSignatures(program: Program, decorators: DecoratorSignat
     }
   }
 
-  function getRestTSParmeterType(type: Type | ValueType) {
-    if (type.kind === "Value") {
-      if (type.target.kind === "Model" && isArrayModelType(program, type.target)) {
-        return `(${getValueTSType(type.target.indexer.value)})[]`;
+  /** For a rest param of constraint T[] or valueof T[] return the T or valueof T */
+  function extractRestParamConstraint(
+    constraint: MixedParameterConstraint,
+  ): MixedParameterConstraint | undefined {
+    let valueType: Type | undefined;
+    let type: Type | undefined;
+    if (constraint.valueType) {
+      if (
+        constraint.valueType.kind === "Model" &&
+        isArrayModelType(program, constraint.valueType)
+      ) {
+        valueType = constraint.valueType.indexer.value;
       } else {
-        return "unknown";
+        return undefined;
       }
     }
-    if (!(type.kind === "Model" && isArrayModelType(program, type))) {
-      return `unknown`;
+    if (constraint.type) {
+      if (constraint.type.kind === "Model" && isArrayModelType(program, constraint.type)) {
+        type = constraint.type.indexer.value;
+      } else {
+        return undefined;
+      }
     }
 
-    return `${getTSParmeterType(type.indexer.value)}[]`;
+    return {
+      entityKind: "MixedParameterConstraint",
+      type,
+      valueType,
+    };
+  }
+  function getRestTSParmeterType(constraint: MixedParameterConstraint) {
+    const restItemConstraint = extractRestParamConstraint(constraint);
+    if (restItemConstraint === undefined) {
+      return "unknown";
+    }
+    return `(${getTSParmeterType(restItemConstraint)})[]`;
   }
 
-  function getTSParmeterType(type: Type | ValueType, isTarget?: boolean): string {
-    if (type.kind === "Value") {
-      return getValueTSType(type.target);
+  function getTSParmeterType(constraint: MixedParameterConstraint, isTarget?: boolean): string {
+    if (constraint.type && constraint.valueType) {
+      return `${getTypeConstraintTSType(constraint.type, isTarget)} | ${getValueTSType(constraint.valueType)}`;
     }
+    if (constraint.valueType) {
+      return getValueTSType(constraint.valueType);
+    } else if (constraint.type) {
+      return getTypeConstraintTSType(constraint.type, isTarget);
+    }
+
+    return useCompilerType("Type");
+  }
+
+  function getTypeConstraintTSType(type: Type, isTarget?: boolean): string {
     if (isTarget && isUnknownType(type)) {
       return useCompilerType("Type");
     }
@@ -142,7 +186,7 @@ export function generateSignatures(program: Program, decorators: DecoratorSignat
       const variants = [...type.variants.values()];
 
       if (isTarget) {
-        const items = [...new Set(variants.map((x) => getTSParmeterType(x.type, isTarget)))];
+        const items = [...new Set(variants.map((x) => getTypeConstraintTSType(x.type, isTarget)))];
         return items.join(" | ");
       } else if (variants.every((x) => isReflectionType(x.type))) {
         return variants.map((x) => useCompilerType((x.type as Model).name)).join(" | ");
@@ -172,8 +216,51 @@ export function generateSignatures(program: Program, decorators: DecoratorSignat
         return getScalarTSType(type);
       case "Union":
         return [...type.variants.values()].map((x) => getValueTSType(x.type)).join(" | ");
+      case "Model":
+        if (isArrayModelType(program, type)) {
+          return `readonly (${getValueTSType(type.indexer.value)})` + "[]";
+        } else if (isReflectionType(type)) {
+          return getValueOfReflectionType(type);
+        } else {
+          // If its exactly the record type use Record<string, T> instead of the model name.
+          if (type.indexer && type.name === "Record" && type.namespace?.name === "TypeSpec") {
+            return `Record<string, ${getValueTSType(type.indexer.value)}>`;
+          }
+          if (type.name) {
+            return useLocalType(type);
+          } else {
+            return writeTypeExpressionForModel(type);
+          }
+        }
     }
     return "unknown";
+  }
+
+  function getValueOfReflectionType(type: Model): string {
+    switch (type.name) {
+      case "EnumMember":
+      case "Enum":
+        return useCompilerType("EnumValue");
+      case "Model":
+        return "Record<string, unknown>";
+      default:
+        return "unknown";
+    }
+  }
+
+  function writeTypeExpressionForModel(model: Model): string {
+    const properties = [...model.properties.values()].map((x) => {
+      return `readonly ${x.name}${x.optional ? "?" : ""}: ${getValueTSType(x.type)}`;
+    });
+    if (model.indexer?.value) {
+      properties.unshift(`readonly [key: string]: ${getValueTSType(model.indexer.value)}`);
+    }
+
+    return `{ ${properties.join(", ")} }`;
+  }
+
+  function declareInterfaceForModel(model: Model): string {
+    return `export interface ${model.name} ${writeTypeExpressionForModel(model)}`;
   }
 
   function getScalarTSType(scalar: Scalar): string {
@@ -190,21 +277,22 @@ export function generateSignatures(program: Program, decorators: DecoratorSignat
   function getStdScalarTSType(scalar: Scalar & { name: IntrinsicScalarName }): string {
     switch (scalar.name) {
       case "numeric":
+      case "decimal":
+      case "decimal128":
+      case "float":
       case "integer":
+      case "int64":
+      case "uint64":
+        return useCompilerType("Numeric");
       case "int8":
       case "int16":
       case "int32":
-      case "int64":
       case "safeint":
       case "uint8":
       case "uint16":
       case "uint32":
-      case "uint64":
-      case "float":
       case "float64":
       case "float32":
-      case "decimal":
-      case "decimal128":
         return "number";
       case "string":
       case "url":
@@ -225,7 +313,7 @@ export function generateSignatures(program: Program, decorators: DecoratorSignat
   }
 }
 
-function isReflectionType(type: Type): type is Model {
+function isReflectionType(type: Type): type is Model & { namespace: { name: "Reflection" } } {
   return (
     type.kind === "Model" &&
     type.namespace?.name === "Reflection" &&
@@ -258,16 +346,17 @@ function getDocComment(type: Type): string {
           : `@${tag.tagName.sv}`;
       for (const content of tag.content) {
         for (const line of content.text.split("\n")) {
+          const cleaned = sanitizeDocComment(line);
           if (first) {
             if (hasContentFirstLine) {
-              tagLines.push(`${tagStart} ${line}`);
+              tagLines.push(`${tagStart} ${cleaned}`);
             } else {
-              tagLines.push(tagStart, line);
+              tagLines.push(tagStart, cleaned);
             }
 
             first = false;
           } else {
-            tagLines.push(line);
+            tagLines.push(cleaned);
           }
         }
       }
@@ -276,6 +365,11 @@ function getDocComment(type: Type): string {
 
   const docLines = [...mainContentLines, ...(tagLines.length > 0 ? [""] : []), ...tagLines];
   return "/**\n" + docLines.map((x) => `* ${x}`).join("\n") + "\n*/\n";
+}
+
+function sanitizeDocComment(doc: string): string {
+  // Issue to escape @internal and other tsdoc tags https://github.com/microsoft/TypeScript/issues/47679
+  return doc.replaceAll("@internal", `@_internal`);
 }
 
 function checkIfTagHasDocOnSameLine(tag: DocTag): boolean {

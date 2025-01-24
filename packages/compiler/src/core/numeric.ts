@@ -19,7 +19,7 @@ export interface Numeric {
 
 /** @internal */
 interface InternalData {
-  /** Digits as a big it */
+  /** Digits as a big int */
   readonly n: bigint;
   /** Exponent */
   readonly e: number;
@@ -73,7 +73,7 @@ function parse(original: string): InternalData {
   let sign: 1 | -1 = 1;
   let n: bigint;
   let exp: number | undefined;
-  let decimal: number;
+  let decimal: number | undefined = undefined;
   if (stringValue[0] === "-") {
     start = 1;
     sign = -1;
@@ -109,6 +109,7 @@ function parse(original: string): InternalData {
       }
       exp += Number(stringValue.slice(i + 1));
       stringValue = stringValue.slice(start, i);
+      decimal = Math.max(stringValue.length - exp, 0);
     } else if (exp === undefined) {
       // Integer.
       exp = stringValue.length - start;
@@ -118,19 +119,28 @@ function parse(original: string): InternalData {
     }
 
     let end = stringValue.length;
-    while (stringValue[end - 1] === "0") {
-      if (end < adjustedPointIndex) {
-        // if we are looking at a zero before the decimal point, we need to decrease the exponent
-        exp++;
-      } else {
-        end--;
+    while (stringValue[end - 1] === "0" && end > adjustedPointIndex) {
+      end--;
+    }
+
+    // Only if there is 0 before the decimal point, keeps checking how many 0 there is after it and update the exponent accordingly.
+    if (start === adjustedPointIndex + 1) {
+      let cur = adjustedPointIndex;
+      while (stringValue[cur] === "0" && cur < end) {
+        cur++;
+        exp--;
       }
     }
+
     try {
       stringValue = stringValue.slice(0, end);
       stringValue = stringValue + "0".repeat(Math.max(exp - stringValue.length, 0)); // add remaining zeros for cases like 3e30
       n = BigInt(stringValue);
-      decimal = n === 0n ? 0 : Math.max(stringValue.length - exp, 0);
+      if (n === 0n) {
+        decimal = 0;
+      } else if (decimal === undefined) {
+        decimal = Math.max(stringValue.length - Math.max(exp, 0), 0);
+      }
     } catch {
       throw new InvalidNumericError(`Invalid numeric value: ${original}`);
     }
@@ -139,11 +149,14 @@ function parse(original: string): InternalData {
   return { n, e: exp, s: sign, d: decimal };
 }
 
-function stringify(value: InternalData) {
+function stringify(value: InternalData): string {
+  if (value.n === 0n) return "0";
+
   const n = value.n.toString();
   const sign = value.s === -1 ? "-" : "";
-  const decimal = value.e < n.length ? "." + n.slice(value.e) : "";
-  return sign + n.slice(0, value.e) + decimal;
+  const int = value.e <= 0 ? "0" : n.slice(0, value.e);
+  const decimal = value.e < n.length ? "." + n.slice(-value.d).padStart(value.d, "0") : "";
+  return sign + int + decimal;
 }
 const equals = (a: InternalData, b: InternalData) => a.n === b.n && a.e === b.e;
 
@@ -182,7 +195,12 @@ const NumericPrototype = {
     return equals(this[InternalDataSym], Numeric(num.toString())[InternalDataSym]) ? num : null;
   },
   asBigInt: function (this: Numeric) {
-    return this.isInteger ? this[InternalDataSym].n : null;
+    if (!this.isInteger) {
+      return null;
+    }
+
+    const { s, n } = this[InternalDataSym];
+    return BigInt(s) * n;
   },
   equals: function (this: Numeric, other: Numeric) {
     return equals(this[InternalDataSym], other[InternalDataSym]);

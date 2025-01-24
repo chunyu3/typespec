@@ -93,7 +93,7 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
               } else {
                 compilerAssert(
                   token === Token.StringTemplateMiddle,
-                  "Should have been a template middle."
+                  "Should have been a template middle.",
                 );
                 classifyStringTemplate(token, {
                   pos: scanner.tokenPosition,
@@ -126,7 +126,7 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
 
     function classifyStringTemplate(
       token: Token.StringTemplateHead | Token.StringTemplateMiddle | Token.StringTemplateTail,
-      range: TextRange
+      range: TextRange,
     ) {
       const stringStart = token === Token.StringTemplateHead ? range.pos : range.pos + 1;
       const stringEnd = token === Token.StringTemplateTail ? range.end : range.end - 2;
@@ -201,6 +201,7 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
         classify(node.id, SemanticTokenKind.TypeParameter);
         break;
       case SyntaxKind.ModelProperty:
+      case SyntaxKind.ObjectLiteralProperty:
       case SyntaxKind.UnionVariant:
         if (node.id) {
           classify(node.id, SemanticTokenKind.Property);
@@ -214,6 +215,14 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
         break;
       case SyntaxKind.ScalarStatement:
         classify(node.id, SemanticTokenKind.Type);
+        break;
+      case SyntaxKind.ScalarConstructor:
+        classify(node.id, SemanticTokenKind.Function);
+        break;
+      case SyntaxKind.UsingStatement:
+        if (node.name.kind === SyntaxKind.Identifier) {
+          classify(node.name, SemanticTokenKind.Namespace);
+        }
         break;
       case SyntaxKind.EnumStatement:
         classify(node.id, SemanticTokenKind.Enum);
@@ -239,6 +248,9 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
       case SyntaxKind.FunctionDeclarationStatement:
         classify(node.id, SemanticTokenKind.Function);
         break;
+      case SyntaxKind.ConstStatement:
+        classify(node.id, SemanticTokenKind.Variable);
+        break;
       case SyntaxKind.FunctionParameter:
         classify(node.id, SemanticTokenKind.Parameter);
         break;
@@ -249,7 +261,9 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
       case SyntaxKind.DecoratorExpression:
         classifyReference(node.target, SemanticTokenKind.Macro);
         break;
-
+      case SyntaxKind.CallExpression:
+        classifyReference(node.target, SemanticTokenKind.Function);
+        break;
       case SyntaxKind.TypeReference:
         classifyReference(node.target);
         break;
@@ -282,6 +296,10 @@ export function getSemanticTokens(ast: TypeSpecScriptNode): SemanticToken[] {
       case SyntaxKind.DocTemplateTag:
         classifyDocTag(node.tagName, SemanticTokenKind.DocCommentTag);
         classifyOverride(node.paramName, SemanticTokenKind.Variable);
+        break;
+      case SyntaxKind.DocPropTag:
+        classifyDocTag(node.tagName, SemanticTokenKind.DocCommentTag);
+        classifyOverride(node.propName, SemanticTokenKind.Variable);
         break;
       case SyntaxKind.DocReturnsTag:
         classifyDocTag(node.tagName, SemanticTokenKind.DocCommentTag);

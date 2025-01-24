@@ -1,7 +1,7 @@
-import { Checkbox, CheckboxOnChangeData } from "@fluentui/react-components";
-import { LinterRuleSet, RuleRef } from "@typespec/compiler";
-import { FunctionComponent, useCallback } from "react";
-import { PlaygroundTspLibrary } from "../../types.js";
+import { Checkbox, type CheckboxOnChangeData } from "@fluentui/react-components";
+import type { LinterRuleSet, RuleRef } from "@typespec/compiler";
+import { useCallback, type FunctionComponent } from "react";
+import type { PlaygroundTspLibrary } from "../../types.js";
 
 export interface LinterFormProps {
   libraries: Record<string, PlaygroundTspLibrary>;
@@ -15,7 +15,7 @@ export const LinterForm: FunctionComponent<LinterFormProps> = ({
   onLinterRuleSetChanged,
 }) => {
   const rulesets = Object.values(libraries).flatMap((lib) => {
-    // eslint-disable-next-line deprecation/deprecation
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const linter = lib.linter ?? lib.definition?.linter;
     return Object.keys(linter?.ruleSets ?? {}).map((x) => `${lib.name}/${x}`) as RuleRef[];
   });
@@ -60,7 +60,7 @@ const RuleSetCheckbox = ({ ruleSet, checked, onChange }: RuleSetCheckbox) => {
     (_: any, data: CheckboxOnChangeData) => {
       onChange(ruleSet, !!data.checked);
     },
-    [ruleSet, checked, onChange]
+    [ruleSet, onChange],
   );
   return <Checkbox label={ruleSet} checked={checked} onChange={handleChange} />;
 };

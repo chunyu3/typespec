@@ -1,6 +1,8 @@
+import { getSymNode } from "../core/binder.js";
 import { compilerAssert } from "../core/diagnostics.js";
-import { getTypeName, isStdNamespace } from "../core/helpers/type-name-utils.js";
-import { Program } from "../core/program.js";
+import { printIdentifier } from "../core/helpers/syntax-utils.js";
+import { getEntityName, getTypeName, isStdNamespace } from "../core/helpers/type-name-utils.js";
+import type { Program } from "../core/program.js";
 import { getFullyQualifiedSymbolName } from "../core/type-utils.js";
 import {
   AliasStatementNode,
@@ -15,22 +17,32 @@ import {
   SyntaxKind,
   Type,
   UnionVariant,
-  ValueType,
+  Value,
 } from "../core/types.js";
-import { printId } from "../formatter/print/printer.js";
 
 /** @internal */
 export function getSymbolSignature(program: Program, sym: Sym): string {
-  const decl = sym.declarations[0];
+  const decl = getSymNode(sym);
   switch (decl?.kind) {
     case SyntaxKind.AliasStatement:
       return fence(`alias ${getAliasSignature(decl)}`);
   }
-  const type = sym.type ?? program.checker.getTypeForNode(decl);
-  return getTypeSignature(type);
+  const entity = sym.type ?? program.checker.getTypeOrValueForNode(decl);
+  return getEntitySignature(sym, entity);
 }
 
-function getTypeSignature(type: Type | ValueType): string {
+function getEntitySignature(sym: Sym, entity: Type | Value | null): string {
+  if (entity === null) {
+    return "(error)";
+  }
+  if ("valueKind" in entity) {
+    return fence(`const ${sym.name}: ${getTypeName(entity.type)}`);
+  }
+
+  return getTypeSignature(entity);
+}
+
+function getTypeSignature(type: Type): string {
   switch (type.kind) {
     case "Scalar":
     case "Enum":
@@ -39,15 +51,14 @@ function getTypeSignature(type: Type | ValueType): string {
     case "Model":
     case "Namespace":
       return fence(`${type.kind.toLowerCase()} ${getPrintableTypeName(type)}`);
+    case "ScalarConstructor":
+      return fence(`init ${getTypeSignature(type.scalar)}.${type.name}`);
     case "Decorator":
       return fence(getDecoratorSignature(type));
-
     case "Function":
       return fence(getFunctionSignature(type));
     case "Operation":
       return fence(getOperationSignature(type));
-    case "Value":
-      return `valueof ${getTypeSignature(type)}`;
     case "String":
       // BUG: https://github.com/microsoft/typespec/issues/1350 - should escape string literal values
       return `(string)\n${fence(`"${type.value}"`)}`;
@@ -93,8 +104,8 @@ function getDecoratorSignature(type: Decorator) {
 function getFunctionSignature(type: FunctionType) {
   const ns = getQualifier(type.namespace);
   const parameters = type.parameters.map((x) => getFunctionParameterSignature(x));
-  return `fn ${ns}${printId(type.name)}(${parameters.join(", ")}): ${getPrintableTypeName(
-    type.returnType
+  return `fn ${ns}${printIdentifier(type.name)}(${parameters.join(", ")}): ${getPrintableTypeName(
+    type.returnType,
   )}`;
 }
 
@@ -106,7 +117,7 @@ function getOperationSignature(type: Operation) {
 function getFunctionParameterSignature(parameter: FunctionParameter) {
   const rest = parameter.rest ? "..." : "";
   const optional = parameter.optional ? "?" : "";
-  return `${rest}${printId(parameter.name)}${optional}: ${getTypeName(parameter.type)}`;
+  return `${rest}${printIdentifier(parameter.name)}${optional}: ${getEntityName(parameter.type)}`;
 }
 
 function getStringTemplateSignature(stringTemplate: StringTemplate) {
@@ -123,7 +134,7 @@ function getStringTemplateSignature(stringTemplate: StringTemplate) {
 
 function getModelPropertySignature(property: ModelProperty) {
   const ns = getQualifier(property.model);
-  return `${ns}${printId(property.name)}: ${getPrintableTypeName(property.type)}`;
+  return `${ns}${printIdentifier(property.name)}: ${getPrintableTypeName(property.type)}`;
 }
 
 function getUnionVariantSignature(variant: UnionVariant) {
@@ -131,15 +142,15 @@ function getUnionVariantSignature(variant: UnionVariant) {
     return getPrintableTypeName(variant.type);
   }
   const ns = getQualifier(variant.union);
-  return `${ns}${printId(variant.name)}: ${getPrintableTypeName(variant.type)}`;
+  return `${ns}${printIdentifier(variant.name)}: ${getPrintableTypeName(variant.type)}`;
 }
 
 function getEnumMemberSignature(member: EnumMember) {
   const ns = getQualifier(member.enum);
   const value = typeof member.value === "string" ? `"${member.value}"` : member.value;
   return value === undefined
-    ? `${ns}${printId(member.name)}`
-    : `${ns}${printId(member.name)}: ${value}`;
+    ? `${ns}${printIdentifier(member.name)}`
+    : `${ns}${printIdentifier(member.name)}: ${value}`;
 }
 
 function getAliasSignature(alias: AliasStatementNode) {

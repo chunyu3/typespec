@@ -1,14 +1,14 @@
 import { deepStrictEqual, ok } from "assert";
-import { describe, it } from "vitest";
-import { oapiForModel } from "./test-host.js";
+import { it } from "vitest";
+import { worksFor } from "./works-for.js";
 
-describe("openapi3: Record", () => {
+worksFor(["3.0.0", "3.1.0"], ({ oapiForModel }) => {
   it("defines record inline", async () => {
     const res = await oapiForModel(
       "Pet",
       `
       model Pet { foodScores: Record<int32> };
-      `
+      `,
     );
 
     ok(res.isRef);
@@ -25,7 +25,7 @@ describe("openapi3: Record", () => {
       `
       model FoodScores is Record<int32> {}
       model Pet { foodScores: FoodScores };
-      `
+      `,
     );
 
     ok(res.isRef);
@@ -42,7 +42,7 @@ describe("openapi3: Record", () => {
       "Person",
       `
       model Person {age: int32, ...Record<string>}
-      `
+      `,
     );
 
     deepStrictEqual(res.schemas.Person, {
@@ -58,7 +58,7 @@ describe("openapi3: Record", () => {
       "Person",
       `
       model Person {age: int32, ...Record<string>, ...Record<boolean>}
-      `
+      `,
     );
 
     deepStrictEqual(res.schemas.Person, {

@@ -1,7 +1,7 @@
 import { editor } from "monaco-editor";
-import { FunctionComponent } from "react";
-import { Editor, EditorProps, useMonacoModel } from "./editor.js";
-import { PlaygroundEditorsOptions } from "./playground.js";
+import type { FunctionComponent } from "react";
+import { Editor, useMonacoModel, type EditorProps } from "./editor.js";
+import type { PlaygroundEditorsOptions } from "./playground.js";
 
 export interface TypeSpecEditorProps extends Omit<EditorProps, "options"> {
   options?: editor.IStandaloneEditorConstructionOptions;
@@ -29,6 +29,7 @@ export const OutputEditor: FunctionComponent<{
   value: string;
   editorOptions?: PlaygroundEditorsOptions;
 }> = ({ filename, value, editorOptions }) => {
+  const model = useMonacoModel(filename);
   if (filename === "") {
     return null;
   }
@@ -40,7 +41,6 @@ export const OutputEditor: FunctionComponent<{
       enabled: false,
     },
   };
-  const model = useMonacoModel(filename);
   model.setValue(value);
   return <Editor model={model} options={options}></Editor>;
 };

@@ -22,7 +22,7 @@ describe("parsing", () => {
 
   describe("invalid number", () => {
     // cspell: ignore babc
-    it.each(["0babc", "0xGHI", "0o999", "a123", "1d.3"])("%s", (a) => {
+    it.each(["0babc", "0xGHI", "0o999", "a123", "1d.3", "1.2.3"])("%s", (a) => {
       expect(() => Numeric(a)).toThrow(`Invalid numeric value: ${a}`);
     });
   });
@@ -39,12 +39,38 @@ describe("parsing", () => {
     it("simple decimal", () => {
       expectNumericData("123.456", 123456n, 3);
     });
+
+    describe("decimal with trailing zeros", () => {
+      it.each([
+        ["1.0", 1n, 1],
+        ["10", 10n, 2],
+        ["10.0", 10n, 2],
+        ["10.00000", 10n, 2],
+        ["100.0", 100n, 3],
+        ["100", 100n, 3],
+        ["1000.0", 1000n, 4],
+        ["1000000000", 1000000000n, 10],
+        ["1000000000.0", 1000000000n, 10],
+        ["1000000000.00000", 1000000000n, 10],
+      ])(`%s`, (a, b, c) => {
+        expectNumericData(a, b, c);
+      });
+    });
+
     it("negative decimal", () => {
       expectNumericData("-123.456", 123456n, 3, -1);
     });
 
-    it("decimal with leading 0", () => {
-      expectNumericData("123.00456", 12300456n, 3);
+    describe("decimal with leading 0", () => {
+      it.each([
+        ["0.1", 1n, 0],
+        ["0.01", 1n, -1],
+        ["0.41", 41n, 0],
+        ["0.041", 41n, -1],
+        ["123.00456", 12300456n, 3],
+      ])(`%s`, (a, b, c) => {
+        expectNumericData(a, b, c);
+      });
     });
 
     it("large integer (> Number.MAX_SAFE_INTEGER)", () => {
@@ -55,7 +81,7 @@ describe("parsing", () => {
       expectNumericData(
         "123456789123456789.112233445566778899",
         123456789123456789112233445566778899n,
-        18
+        18,
       );
     });
   });
@@ -73,7 +99,7 @@ describe("parsing", () => {
       expectNumericData(
         "0b1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         9903520314283042199192993792n,
-        28
+        28,
       );
     });
   });
@@ -128,13 +154,20 @@ describe("parsing", () => {
       expectNumericData(
         "5e64",
         50000000000000000000000000000000000000000000000000000000000000000n,
-        65
+        65,
       );
     });
   });
 });
 
 describe("asString", () => {
+  it("0 is 0", () => {
+    expect(Numeric("0.0").toString()).toEqual("0");
+  });
+  it("1.0 is 1", () => {
+    expect(Numeric("1.0").toString()).toEqual("1");
+  });
+
   it("doesn't include decimal if is an integer", () => {
     expect(Numeric("123").toString()).toEqual("123");
   });
@@ -149,6 +182,12 @@ describe("asString", () => {
   it("decimals", () => {
     expect(Numeric("-123.456").toString()).toEqual("-123.456");
   });
+
+  it("decimals with leading 0", () => {
+    expect(Numeric("0.1").toString()).toEqual("0.1");
+    expect(Numeric("0.01").toString()).toEqual("0.01");
+  });
+
   it("data with exponent", () => {
     expect(Numeric("5e6").toString()).toEqual("5000000");
   });
@@ -168,10 +207,15 @@ describe("asNumber", () => {
   it.each([
     ["0", 0],
     ["0.0", 0],
+    ["0.1", 0.1],
+    ["0.01", 0.01],
+    ["0.041", 0.041],
+    ["1e-2", 0.01],
     ["123", 123],
     ["123.456", 123.456],
     ["123.00", 123],
     ["123456789123456789123456789123456789", null],
+    ["-123456789123456789123456789123456789", null],
     ["123456789123456789.123456789123456789", null],
   ])("%s => %d", (a, b) => {
     const numeric = Numeric(a);
@@ -186,6 +230,7 @@ describe("asBigInt", () => {
     ["123.456", null],
     ["123.00", 123n],
     ["123456789123456789123456789123456789", 123456789123456789123456789123456789n],
+    ["-123456789123456789123456789123456789", -123456789123456789123456789123456789n],
     ["123456789123456789.123456789123456789", null],
   ])("%s => %d", (a, b) => {
     const numeric = Numeric(a);

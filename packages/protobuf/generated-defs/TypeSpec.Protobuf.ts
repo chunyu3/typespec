@@ -43,15 +43,15 @@ export type MessageDecorator = (context: DecoratorContext, target: Type) => void
  * @example
  * ```typespec
  * model ExampleMessage {
- * @field(1)
- * test: string;
+ *   @field(1)
+ *   test: string;
  * }
  * ```
  */
 export type FieldDecorator = (
   context: DecoratorContext,
   target: ModelProperty,
-  index: number
+  index: number,
 ) => void;
 
 /**
@@ -82,7 +82,7 @@ export type FieldDecorator = (
  * // Reserve the fields 8-15 inclusive, 100, and the field name "test" within a model.
  * @reserve([8, 15], 100, "test")
  * model Example {
- * // ...
+ *   // ...
  * }
  * ```
  */
@@ -107,7 +107,7 @@ export type ServiceDecorator = (context: DecoratorContext, target: Interface) =>
 export type PackageDecorator = (
   context: DecoratorContext,
   target: Namespace,
-  details?: Type
+  details?: Type,
 ) => void;
 
 /**
@@ -126,3 +126,12 @@ export type PackageDecorator = (
  * ```
  */
 export type StreamDecorator = (context: DecoratorContext, target: Operation, mode: Type) => void;
+
+export type TypeSpecProtobufDecorators = {
+  message: MessageDecorator;
+  field: FieldDecorator;
+  reserve: ReserveDecorator;
+  service: ServiceDecorator;
+  package: PackageDecorator;
+  stream: StreamDecorator;
+};

@@ -6,7 +6,7 @@ import { resolve } from "path/posix";
 import { fileURLToPath } from "url";
 import { beforeAll, describe, it } from "vitest";
 import { NodeHost } from "../../src/index.js";
-import { TypeSpecCoreTemplates } from "../../src/init/core-templates.js";
+import { getTypeSpecCoreTemplates } from "../../src/init/core-templates.js";
 import { makeScaffoldingConfig, scaffoldNewProject } from "../../src/init/scaffold.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -16,7 +16,7 @@ const snapshotFolder = resolve(__dirname, "../../templates/__snapshots__");
 async function execAsync(
   command: string,
   args: string[] = [],
-  options: SpawnOptions = {}
+  options: SpawnOptions = {},
 ): Promise<{ exitCode: number; stdio: string; stdout: string; stderr: string; proc: any }> {
   const child = spawn(command, args, options);
 
@@ -54,7 +54,7 @@ interface ScaffoldedTemplateFixture {
   readonly checkCommand: (
     command: string,
     args?: string[],
-    options?: SpawnOptions
+    options?: SpawnOptions,
   ) => Promise<void>;
 }
 
@@ -64,7 +64,8 @@ describe("Init templates e2e tests", () => {
   });
 
   async function scaffoldTemplateTo(name: string, targetFolder: string) {
-    const template = TypeSpecCoreTemplates.templates[name];
+    const typeSpecCoreTemplates = await getTypeSpecCoreTemplates(NodeHost);
+    const template = typeSpecCoreTemplates.templates[name];
     ok(template, `Template '${name}' not found`);
     await scaffoldNewProject(
       NodeHost,
@@ -72,8 +73,8 @@ describe("Init templates e2e tests", () => {
         name,
         folderName: name,
         directory: targetFolder,
-        baseUri: TypeSpecCoreTemplates.baseUri,
-      })
+        baseUri: typeSpecCoreTemplates.baseUri,
+      }),
     );
   }
   async function scaffoldTemplateSnapshot(name: string): Promise<void> {
@@ -99,7 +100,7 @@ describe("Init templates e2e tests", () => {
             "-".repeat(100),
             result.stdio,
             "-".repeat(100),
-          ].join("\n")
+          ].join("\n"),
         );
       },
     };

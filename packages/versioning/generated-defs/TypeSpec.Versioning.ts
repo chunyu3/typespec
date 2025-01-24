@@ -22,16 +22,16 @@ import type {
  * @versioned(Versions)
  * namespace MyService;
  * enum Versions {
- * v1,
- * v2,
- * v3,
+ *   v1,
+ *   v2,
+ *   v3,
  * }
  * ```
  */
 export type VersionedDecorator = (
   context: DecoratorContext,
   target: Namespace,
-  versions: Enum
+  versions: Enum,
 ) => void;
 
 /**
@@ -50,12 +50,12 @@ export type VersionedDecorator = (
  * @versioned(Versions)
  * namespace MyService1;
  * enum Version {
- * @useDependency(MyLib.Versions.v1_1) // V1 use lib v1_1
- * v1,
- * @useDependency(MyLib.Versions.v1_1) // V2 use lib v1_1
- * v2,
- * @useDependency(MyLib.Versions.v2) // V3 use lib v2
- * v3,
+ *   @useDependency(MyLib.Versions.v1_1) // V1 use lib v1_1
+ *   v1,
+ *   @useDependency(MyLib.Versions.v1_1) // V2 use lib v1_1
+ *   v2,
+ *   @useDependency(MyLib.Versions.v2) // V3 use lib v2
+ *   v3,
  * }
  * ```
  */
@@ -78,10 +78,10 @@ export type UseDependencyDecorator = (
  * model AlsoAddedInV2 {}
  *
  * model Foo {
- * name: string;
+ *   name: string;
  *
- * @added(Versions.v3)
- * addedInV3: string;
+ *   @added(Versions.v3)
+ *   addedInV3: string;
  * }
  * ```
  */
@@ -97,7 +97,7 @@ export type AddedDecorator = (
     | UnionVariant
     | Scalar
     | Interface,
-  version: EnumMember
+  version: EnumMember,
 ) => void;
 
 /**
@@ -113,10 +113,10 @@ export type AddedDecorator = (
  * model AlsoRemovedInV2 {}
  *
  * model Foo {
- * name: string;
+ *   name: string;
  *
- * @removed(Versions.v3)
- * removedInV3: string;
+ *   @removed(Versions.v3)
+ *   removedInV3: string;
  * }
  * ```
  */
@@ -132,7 +132,7 @@ export type RemovedDecorator = (
     | UnionVariant
     | Scalar
     | Interface,
-  version: EnumMember
+  version: EnumMember,
 ) => void;
 
 /**
@@ -159,7 +159,7 @@ export type RenamedFromDecorator = (
     | Scalar
     | Interface,
   version: EnumMember,
-  oldName: string
+  oldName: string,
 ) => void;
 
 /**
@@ -169,16 +169,35 @@ export type RenamedFromDecorator = (
  * @example
  * ```tsp
  * model Foo {
- * name: string;
- * @madeOptional(Versions.v2)
- * nickname: string;
+ *   name: string;
+ *   @madeOptional(Versions.v2)
+ *   nickname?: string;
  * }
  * ```
  */
 export type MadeOptionalDecorator = (
   context: DecoratorContext,
   target: ModelProperty,
-  version: EnumMember
+  version: EnumMember,
+) => void;
+
+/**
+ * Identifies when a target was made required.
+ *
+ * @param version The version that the target was made required in.
+ * @example
+ * ```tsp
+ * model Foo {
+ *   name: string;
+ *   @madeRequired(Versions.v2)
+ *   nickname: string;
+ * }
+ * ```
+ */
+export type MadeRequiredDecorator = (
+  context: DecoratorContext,
+  target: ModelProperty,
+  version: EnumMember,
 ) => void;
 
 /**
@@ -191,7 +210,7 @@ export type TypeChangedFromDecorator = (
   context: DecoratorContext,
   target: ModelProperty,
   version: EnumMember,
-  oldType: Type
+  oldType: Type,
 ) => void;
 
 /**
@@ -204,5 +223,17 @@ export type ReturnTypeChangedFromDecorator = (
   context: DecoratorContext,
   target: Operation,
   version: EnumMember,
-  oldType: Type
+  oldType: Type,
 ) => void;
+
+export type TypeSpecVersioningDecorators = {
+  versioned: VersionedDecorator;
+  useDependency: UseDependencyDecorator;
+  added: AddedDecorator;
+  removed: RemovedDecorator;
+  renamedFrom: RenamedFromDecorator;
+  madeOptional: MadeOptionalDecorator;
+  madeRequired: MadeRequiredDecorator;
+  typeChangedFrom: TypeChangedFromDecorator;
+  returnTypeChangedFrom: ReturnTypeChangedFromDecorator;
+};

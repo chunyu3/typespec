@@ -1,14 +1,8 @@
-import {
-  compilerAssert,
-  EmitContext,
-  getTypeName,
-  isTemplateDeclaration,
-  joinPaths,
-  Model,
-  Namespace,
-  Program,
-  Type,
-} from "../core/index.js";
+import { compilerAssert } from "../core/diagnostics.js";
+import { getTypeName } from "../core/helpers/type-name-utils.js";
+import type { EmitContext, Model, Namespace, Program, Type } from "../core/index.js";
+import { joinPaths } from "../core/path-utils.js";
+import { isTemplateDeclaration } from "../core/type-utils.js";
 import { CustomKeyMap } from "./custom-key-map.js";
 import { Placeholder } from "./placeholder.js";
 import { resolveDeclarationReferenceScope } from "./ref-scope.js";
@@ -20,9 +14,9 @@ import {
   ContextState,
   Declaration,
   EmitEntity,
+  EmitTypeReferenceOptions,
   EmitterResult,
   EmitterState,
-  EmitTypeReferenceOptions,
   LexicalTypeStackEntry,
   NamespaceScope,
   NoEmit,
@@ -46,7 +40,7 @@ interface ReferenceChainEntry {
 export function createAssetEmitter<T, TOptions extends object>(
   program: Program,
   TypeEmitterClass: typeof TypeEmitter<T, TOptions>,
-  emitContext: EmitContext<TOptions>
+  emitContext: EmitContext<TOptions>,
 ): AssetEmitter<T, TOptions> {
   const sourceFiles: SourceFile<T>[] = [];
 
@@ -72,7 +66,7 @@ export function createAssetEmitter<T, TOptions extends object>(
   const typeToEmitEntity = new CustomKeyMap<[string, Type, ContextState], EmitEntity<T>>(
     ([method, type, context]) => {
       return `${method}-${typeId.getKey(type)}-${contextId.getKey(context)}`;
-    }
+    },
   );
 
   // When we encounter a circular reference, this map will hold a callback
@@ -97,7 +91,7 @@ export function createAssetEmitter<T, TOptions extends object>(
   const knownContexts = new CustomKeyMap<[LexicalTypeStackEntry, ContextState], ContextState>(
     ([entry, context]) => {
       return `${entryId.getKey(entry)}-${contextId.getKey(context)}`;
-    }
+    },
   );
 
   // The stack of types that the currently emitted type is lexically
@@ -155,7 +149,7 @@ export function createAssetEmitter<T, TOptions extends object>(
         const scope = currentScope();
         compilerAssert(
           scope,
-          "Emit context must have a scope set in order to create declarations. Consider setting scope to a new source file's global scope in the `programContext` method of `TypeEmitter`."
+          "Emit context must have a scope set in order to create declarations. Consider setting scope to a new source file's global scope in the `programContext` method of `TypeEmitter`.",
         );
         return new Declaration(name, scope, value);
       },
@@ -252,7 +246,7 @@ export function createAssetEmitter<T, TOptions extends object>(
                 this,
                 resolvedEntity,
                 true,
-                resolveReferenceCycle(typeChainSnapshot, entity, typeToEmitEntity as any)
+                resolveReferenceCycle(typeChainSnapshot, entity, typeToEmitEntity as any),
               ),
           });
 
@@ -266,7 +260,7 @@ export function createAssetEmitter<T, TOptions extends object>(
           assetEmitter: AssetEmitter<T, TOptions>,
           entity: EmitEntity<T>,
           circular: boolean,
-          cycle?: ReferenceCycle
+          cycle?: ReferenceCycle,
         ): EmitEntity<T> {
           let ref;
           const scope = currentScope();
@@ -279,11 +273,11 @@ export function createAssetEmitter<T, TOptions extends object>(
             }
             compilerAssert(
               scope,
-              "Emit context must have a scope set in order to create references to declarations."
+              "Emit context must have a scope set in order to create references to declarations.",
             );
             const { pathUp, pathDown, commonScope } = resolveDeclarationReferenceScope(
               entity,
-              scope
+              scope,
             );
             ref = typeEmitter.reference(entity, pathUp, pathDown, commonScope);
           }
@@ -297,13 +291,13 @@ export function createAssetEmitter<T, TOptions extends object>(
             // the target declaration is finished being emitted.
             compilerAssert(
               ref.kind !== "circular",
-              "TypeEmitter `reference` returned circular emit"
+              "TypeEmitter `reference` returned circular emit",
             );
 
             // this could presumably be allowed if we want.
             compilerAssert(
               ref.kind === "none" || !(ref.value instanceof Placeholder),
-              "TypeEmitter's `reference` method cannot return a placeholder."
+              "TypeEmitter's `reference` method cannot return a placeholder.",
             );
 
             switch (ref.kind) {
@@ -552,7 +546,7 @@ export function createAssetEmitter<T, TOptions extends object>(
   }
 
   function isInternalMethod(
-    method: TypeEmitterMethod
+    method: TypeEmitterMethod,
   ): method is Exclude<
     TypeEmitterMethod,
     | "interfaceDeclarationOperations"
@@ -583,7 +577,7 @@ export function createAssetEmitter<T, TOptions extends object>(
    */
   function setContextForType<TMethod extends TypeEmitterMethod>(
     method: TMethod,
-    args: Parameters<TypeEmitter<T, TOptions>[TMethod]>
+    args: Parameters<TypeEmitter<T, TOptions>[TMethod]>,
   ) {
     const type = args[0];
     let newTypeStack: LexicalTypeStackEntry[];
@@ -596,7 +590,7 @@ export function createAssetEmitter<T, TOptions extends object>(
       while (ns) {
         if (ns.name === "") break;
         newTypeStack.unshift(
-          stackEntryInterner.intern({ method: "namespace", args: stackEntryInterner.intern([ns]) })
+          stackEntryInterner.intern({ method: "namespace", args: stackEntryInterner.intern([ns]) }),
         );
         ns = ns.namespace;
       }
@@ -644,14 +638,14 @@ export function createAssetEmitter<T, TOptions extends object>(
       if (keyHasContext(entry.method)) {
         compilerAssert(
           (typeEmitter as any)[lexicalKey],
-          `TypeEmitter doesn't have a method named ${lexicalKey}`
+          `TypeEmitter doesn't have a method named ${lexicalKey}`,
         );
       }
 
       if (keyHasReferenceContext(entry.method)) {
         compilerAssert(
           (typeEmitter as any)[referenceKey],
-          `TypeEmitter doesn't have a method named ${referenceKey}`
+          `TypeEmitter doesn't have a method named ${referenceKey}`,
         );
       }
 
@@ -697,7 +691,7 @@ export function createAssetEmitter<T, TOptions extends object>(
   function withTypeContext<TMethod extends TypeEmitterMethod>(
     method: TMethod,
     args: Parameters<TypeEmitter<T, TOptions>[TMethod]>,
-    cb: () => void
+    cb: () => void,
   ) {
     const oldContext = context;
     const oldTypeStack = lexicalTypeStack;
@@ -714,7 +708,7 @@ export function createAssetEmitter<T, TOptions extends object>(
 
   function withPatchedReferenceContext<T>(
     referenceContext: Record<string, any> | undefined,
-    cb: () => T
+    cb: () => T,
   ): T {
     if (referenceContext !== undefined) {
       const oldContext = context;
@@ -739,8 +733,8 @@ export function createAssetEmitter<T, TOptions extends object>(
    * Invoke the callback with the given context.
    */
   function withContext(newContext: EmitterState, cb: () => void) {
-    const oldContext = newContext.context;
-    const oldTypeStack = newContext.lexicalTypeStack;
+    const oldContext = context;
+    const oldTypeStack = lexicalTypeStack;
     context = newContext.context;
     lexicalTypeStack = newContext.lexicalTypeStack;
 
@@ -921,7 +915,7 @@ function keyHasReferenceContext(key: keyof TypeEmitter<any, any>): boolean {
 function resolveReferenceCycle(
   stack: ReferenceChainEntry[],
   entity: CircularEmit,
-  typeToEmitEntity: CustomKeyMap<[string, Type, ContextState], EmitEntity<unknown>>
+  typeToEmitEntity: CustomKeyMap<[string, Type, ContextState], EmitEntity<unknown>>,
 ): ReferenceCycle {
   for (let i = stack.length - 1; i >= 0; i--) {
     if (stack[i].type === entity.emitEntityKey[1]) {
@@ -931,11 +925,11 @@ function resolveReferenceCycle(
             type: x.type,
             entity: typeToEmitEntity.get([x.method, x.type, x.context])!,
           };
-        })
+        }),
       );
     }
   }
   throw new Error(
-    `Couldn't resolve the circular reference stack for ${getTypeName(entity.emitEntityKey[1])}`
+    `Couldn't resolve the circular reference stack for ${getTypeName(entity.emitEntityKey[1])}`,
   );
 }

@@ -21,6 +21,9 @@ stages:
             "Node 20.x":
               nodeVersion: 20.x
 
+            "Node 22.x":
+              nodeVersion: 22.x
+
         pool:
           name: $(WINDOWSPOOL)
           image: $(WINDOWSVMIMAGE)
@@ -57,6 +60,16 @@ stages:
             parameters:
               nodeVersion: $(nodeVersion)
               os: linux
+
+      - job: website
+        displayName: Website
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - template: /eng/tsp-core/pipelines/jobs/website.yml
 
       - template: /eng/tsp-core/pipelines/jobs/publish-artifacts.yml
       - template: /eng/tsp-core/pipelines/jobs/e2e.yml

@@ -13,10 +13,10 @@ import {
   CompilerHost,
   Diagnostic,
   DiagnosticTarget,
+  MutableSymbolTable,
   NoTarget,
   RekeyableMap,
   SourceFile,
-  Sym,
   SymbolTable,
 } from "../core/types.js";
 
@@ -93,7 +93,7 @@ export type EqualityComparer<T> = (x: T, y: T) => boolean;
 export function arrayEquals<T>(
   left: T[],
   right: T[],
-  equals: EqualityComparer<T> = (x, y) => x === y
+  equals: EqualityComparer<T> = (x, y) => x === y,
 ): boolean {
   if (left === right) {
     return true;
@@ -119,7 +119,7 @@ export function arrayEquals<T>(
 export function mapEquals<K, V>(
   left: Map<K, V>,
   right: Map<K, V>,
-  equals: EqualityComparer<V> = (x, y) => x === y
+  equals: EqualityComparer<V> = (x, y) => x === y,
 ): boolean {
   if (left === right) {
     return true;
@@ -157,7 +157,7 @@ export async function doIO<T>(
   action: (path: string) => Promise<T>,
   path: string,
   reportDiagnostic: DiagnosticHandler,
-  options?: FileHandlingOptions
+  options?: FileHandlingOptions,
 ): Promise<T | undefined> {
   let result;
   try {
@@ -199,7 +199,7 @@ export async function loadFile<T>(
   path: string,
   load: (contents: string) => T,
   reportDiagnostic: DiagnosticHandler,
-  options?: FileHandlingOptions
+  options?: FileHandlingOptions,
 ): Promise<[T | undefined, SourceFile]> {
   const file = await doIO(host.readFile, path, reportDiagnostic, options);
   if (!file) {
@@ -244,8 +244,7 @@ export function resolveRelativeUrlOrPath(base: string, relativeOrAbsolute: strin
  * A specially typed version of `Array.isArray` to work around [this issue](https://github.com/microsoft/TypeScript/issues/17002).
  */
 export function isArray<T>(
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  arg: T | {}
+  arg: T | {},
 ): arg is T extends readonly any[] ? (unknown extends T ? never : readonly any[]) : any[] {
   return Array.isArray(arg);
 }
@@ -255,6 +254,42 @@ export function isArray<T>(
  */
 export function isDefined<T>(arg: T | undefined): arg is T {
   return arg !== undefined;
+}
+
+export function isWhitespaceStringOrUndefined(str: string | undefined): boolean {
+  return !str || /^\s*$/.test(str);
+}
+
+export function firstNonWhitespaceCharacterIndex(line: string): number {
+  return line.search(/\S/);
+}
+
+export function distinctArray<T, P>(arr: T[], keySelector: (item: T) => P): T[] {
+  const map = new Map<P, T>();
+  for (const item of arr) {
+    map.set(keySelector(item), item);
+  }
+  return Array.from(map.values());
+}
+
+export function tryParseJson(content: string): any | undefined {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return undefined;
+  }
+}
+
+export function debounce<T extends (...args: any[]) => any>(fn: T, delayInMs: number): T {
+  let timer: NodeJS.Timeout | undefined;
+  return function (this: any, ...args: Parameters<T>) {
+    if (timer) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => {
+      fn.apply(this, args);
+    }, delayInMs);
+  } as T;
 }
 
 /**
@@ -271,7 +306,7 @@ export function omitUndefined<T extends Record<string, unknown>>(data: T): T {
  */
 export async function findProjectRoot(
   statFn: CompilerHost["stat"],
-  path: string
+  path: string,
 ): Promise<string | undefined> {
   let current = path;
   while (true) {
@@ -279,7 +314,7 @@ export async function findProjectRoot(
     const stat = await doIO(
       () => statFn(pkgPath),
       pkgPath,
-      () => {}
+      () => {},
     );
     if (stat?.isFile()) {
       return current;
@@ -420,12 +455,21 @@ export class Queue<T> {
  */
 //prettier-ignore
 export type Mutable<T> =
-  T extends SymbolTable ? T & { set(key: string, value: Sym): void } :
+  T extends SymbolTable ? T & MutableSymbolTable :
   T extends ReadonlyMap<infer K, infer V> ? Map<K, V> :
   T extends ReadonlySet<infer T> ? Set<T> :
   T extends readonly (infer V)[] ? V[] :
   // brand to force explicit conversion.
-  { -readonly [P in keyof T]: T[P] } & { __writableBrand: never };
+  { -readonly [P in keyof T]: T[P] };
+
+//prettier-ignore
+type MutableExt<T> =
+T extends SymbolTable ? T & MutableSymbolTable :
+T extends ReadonlyMap<infer K, infer V> ? Map<K, V> :
+T extends ReadonlySet<infer T> ? Set<T> :
+T extends readonly (infer V)[] ? V[] :
+// brand to force explicit conversion.
+{ -readonly [P in keyof T]: T[P] } & { __writableBrand: never };
 
 /**
  * Casts away readonly typing.
@@ -433,8 +477,8 @@ export type Mutable<T> =
  * Use it like this when it is safe to override readonly typing:
  *   mutate(item).prop = value;
  */
-export function mutate<T>(value: T): Mutable<T> {
-  return value as Mutable<T>;
+export function mutate<T>(value: T): MutableExt<T> {
+  return value as MutableExt<T>;
 }
 
 export function createStringMap<T>(caseInsensitive: boolean): Map<string, T> {
@@ -456,7 +500,7 @@ class CaseInsensitiveMap<T> extends Map<string, T> {
   }
 }
 
-export function createRekeyableMap<K, V>(entries?: [K, V][]): RekeyableMap<K, V> {
+export function createRekeyableMap<K, V>(entries?: Iterable<[K, V]>): RekeyableMap<K, V> {
   return new RekeyableMapImpl<K, V>(entries);
 }
 
@@ -468,7 +512,7 @@ class RekeyableMapImpl<K, V> implements RekeyableMap<K, V> {
   #keys = new Map<K, RekeyableMapKey<K>>();
   #values = new Map<RekeyableMapKey<K>, V>();
 
-  constructor(entries?: [K, V][]) {
+  constructor(entries?: Iterable<[K, V]>) {
     if (entries) {
       for (const [key, value] of entries) {
         this.set(key, value);

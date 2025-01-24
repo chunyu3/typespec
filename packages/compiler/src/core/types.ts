@@ -1,17 +1,23 @@
 import type { JSONSchemaType as AjvJSONSchemaType } from "ajv";
-import { TypeEmitter } from "../emitter-framework/type-emitter.js";
-import { AssetEmitter } from "../emitter-framework/types.js";
-import { YamlPathTarget, YamlScript } from "../yaml/types.js";
-import { ModuleResolutionResult } from "./module-resolver.js";
-import { Program } from "./program.js";
+import type { TypeEmitter } from "../emitter-framework/type-emitter.js";
+import type { AssetEmitter } from "../emitter-framework/types.js";
+import type { ModuleResolutionResult } from "../module-resolver/module-resolver.js";
+import type { YamlPathTarget, YamlScript } from "../yaml/types.js";
+import type { Numeric } from "./numeric.js";
+import type { Program } from "./program.js";
 import type { TokenFlags } from "./scanner.js";
 
 // prettier-ignore
-export type MarshalledValue<Type>  = 
-  Type extends StringLiteral ? string
-  : Type extends NumericLiteral ? number
-  : Type extends BooleanLiteral ? boolean
-  : Type
+export type MarshalledValue<Value>  = 
+Value extends StringValue ? string
+  : Value extends NumericValue ? number | Numeric
+  : Value extends BooleanValue ? boolean
+  : Value extends ObjectValue ? Record<string, unknown>
+  : Value extends ArrayValue ? unknown[]
+  : Value extends EnumValue ? EnumMember
+  : Value extends NullValue ? null
+  : Value extends ScalarValue ? Value
+  : Value
 
 /**
  * Type System types
@@ -20,17 +26,25 @@ export type MarshalledValue<Type>  =
 export type DecoratorArgumentValue = Type | number | string | boolean;
 
 export interface DecoratorArgument {
-  value: Type;
+  value: Type | Value;
   /**
    * Marshalled value for use in Javascript.
    */
-  jsValue: Type | string | number | boolean;
+  jsValue:
+    | Type
+    | Value
+    | Record<string, unknown>
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | Numeric
+    | null;
   node?: Node;
 }
 
 export interface DecoratorApplication {
   definition?: Decorator;
-  // TODO-TIM deprecate replace with `implementation`?
   decorator: DecoratorFunction;
   args: DecoratorArgument[];
   node?: DecoratorExpressionNode | AugmentDecoratorStatementNode;
@@ -42,6 +56,7 @@ export interface DecoratorFunction {
 }
 
 export interface BaseType {
+  readonly entityKind: "Type";
   kind: string;
   node?: Node;
   instantiationParameters?: Type[];
@@ -72,9 +87,15 @@ export type TemplatedType = Model | Operation | Interface | Union | Scalar;
 
 export interface TypeMapper {
   partial: boolean;
-  getMappedType(type: TemplateParameter): Type;
-  args: readonly Type[];
-  /** @internal */ map: Map<TemplateParameter, Type>;
+  getMappedType(type: TemplateParameter): Type | Value | IndeterminateEntity;
+  args: readonly (Type | Value | IndeterminateEntity)[];
+  /** @internal Node used to create this type mapper. */
+  readonly source: {
+    readonly node: Node;
+    readonly mapper: TypeMapper | undefined;
+  };
+  /** @internal */
+  map: Map<TemplateParameter, Type | Value | IndeterminateEntity>;
 }
 
 export interface TemplatedTypeBase {
@@ -82,34 +103,43 @@ export interface TemplatedTypeBase {
   /**
    * @deprecated use templateMapper instead.
    */
-  templateArguments?: Type[];
+  templateArguments?: (Type | Value | IndeterminateEntity)[];
   templateNode?: Node;
 }
 
+/**
+ * Represent every single entity that are part of the TypeSpec program. Those are composed of different elements:
+ * - Types
+ * - Values
+ * - Value Constraints
+ */
+export type Entity = Type | Value | MixedParameterConstraint | IndeterminateEntity;
+
 export type Type =
-  | Model
-  | ModelProperty
-  | Scalar
-  | Interface
+  | BooleanLiteral
+  | Decorator
   | Enum
   | EnumMember
-  | TemplateParameter
+  | FunctionParameter
+  | FunctionType
+  | Interface
+  | IntrinsicType
+  | Model
+  | ModelProperty
   | Namespace
-  | Operation
-  | StringLiteral
   | NumericLiteral
-  | BooleanLiteral
+  | ObjectType
+  | Operation
+  | Projection
+  | Scalar
+  | ScalarConstructor
+  | StringLiteral
   | StringTemplate
   | StringTemplateSpan
+  | TemplateParameter
   | Tuple
   | Union
-  | UnionVariant
-  | IntrinsicType
-  | FunctionType
-  | Decorator
-  | FunctionParameter
-  | ObjectType
-  | Projection;
+  | UnionVariant;
 
 export type StdTypes = {
   // Models
@@ -143,14 +173,33 @@ export interface Projector {
   parentProjector?: Projector;
   projections: ProjectionApplication[];
   projectedTypes: Map<Type, Type>;
-  projectType(type: Type): Type;
+  projectType(type: Type | Value): Type | Value;
   projectedStartNode?: Type;
   projectedGlobalNamespace?: Namespace;
 }
 
-export interface ValueType {
-  kind: "Value"; // Todo remove?
-  target: Type;
+export interface MixedParameterConstraint {
+  readonly entityKind: "MixedParameterConstraint";
+  readonly node?: UnionExpressionNode | Expression;
+
+  /** Type constraints */
+  readonly type?: Type;
+
+  /** Expecting value */
+  readonly valueType?: Type;
+}
+
+/** When an entity that could be used as a type or value has not figured out if it is a value or type yet. */
+export interface IndeterminateEntity {
+  readonly entityKind: "Indeterminate";
+  readonly type:
+    | StringLiteral
+    | StringTemplate
+    | NumericLiteral
+    | BooleanLiteral
+    | EnumMember
+    | UnionVariant
+    | NullType;
 }
 
 export interface IntrinsicType extends BaseType {
@@ -211,10 +260,28 @@ export type IntrinsicScalarName =
   | "boolean"
   | "url";
 
-export type NeverIndexer = { key: NeverType; value: undefined };
+/**
+ * Valid keys when looking up meta members for a particular type.
+ * Array is a special case because it doesn't have a unique type, but does
+ * carry unique meta-members.
+ */
+export type MetaMemberKey = Type["kind"] | "Array";
+
+/**
+ * A table to ease lookup of meta member interfaces during identifier resolution.
+ * Only `type` exists today, but `value` will be added in the future.
+ */
+export interface MetaMembersTable {
+  type: Partial<Record<MetaMemberKey, Sym>>;
+}
+export type NeverIndexer = {
+  readonly key: NeverType;
+  readonly value: undefined;
+};
+
 export type ModelIndexer = {
-  key: Scalar;
-  value: Type;
+  readonly key: Scalar;
+  readonly value: Type;
 };
 
 export interface ArrayModelType extends Model {
@@ -232,7 +299,8 @@ export interface Model extends BaseType, DecoratedType, TemplatedTypeBase {
     | ModelStatementNode
     | ModelExpressionNode
     | IntersectionExpressionNode
-    | ProjectionModelExpressionNode;
+    | ProjectionModelExpressionNode
+    | ObjectLiteralNode;
   namespace?: Namespace;
   indexer?: ModelIndexer;
 
@@ -266,10 +334,27 @@ export interface Model extends BaseType, DecoratedType, TemplatedTypeBase {
   sourceModel?: Model;
 
   /**
+   * Models that were used to build this model. This include any model referenced in `model is`, `...` or when intersecting models.
+   */
+  sourceModels: SourceModel[];
+
+  /**
    * Late-bound symbol of this model type.
    * @internal
    */
   symbol?: Sym;
+}
+
+export interface SourceModel {
+  /**
+   * How was this model used.
+   * - is: `model A is B`
+   * - spread: `model A {...B}`
+   * - intersection: `alias A = B & C`
+   */
+  readonly usage: "is" | "spread" | "intersection";
+  /** Source model */
+  readonly model: Model;
 }
 
 export interface ModelProperty extends BaseType, DecoratedType {
@@ -278,16 +363,95 @@ export interface ModelProperty extends BaseType, DecoratedType {
     | ModelPropertyNode
     | ModelSpreadPropertyNode
     | ProjectionModelPropertyNode
-    | ProjectionModelSpreadPropertyNode;
+    | ProjectionModelSpreadPropertyNode
+    | ObjectLiteralPropertyNode;
   name: string;
   type: Type;
   // when spread or intersection operators make new property types,
   // this tracks the property we copied from.
   sourceProperty?: ModelProperty;
   optional: boolean;
+  /** @deprecated use {@link defaultValue} instead. */
   default?: Type;
+  defaultValue?: Value;
   model?: Model;
 }
+
+//#region Values
+export type Value =
+  | ScalarValue
+  | NumericValue
+  | StringValue
+  | BooleanValue
+  | ObjectValue
+  | ArrayValue
+  | EnumValue
+  | NullValue;
+
+interface BaseValue {
+  readonly entityKind: "Value";
+  readonly valueKind: string;
+  /**
+   * Represent the storage type of a value.
+   * @example
+   * ```tsp
+   * const a = "hello"; // Type here would be "hello"
+   * const b: string = a;  // Type here would be string
+   * const c: string | int32 = b; // Type here would be string | int32
+   * ```
+   */
+  type: Type;
+}
+
+export interface ObjectValue extends BaseValue {
+  valueKind: "ObjectValue";
+  node: ObjectLiteralNode;
+  properties: Map<string, ObjectValuePropertyDescriptor>;
+}
+
+export interface ObjectValuePropertyDescriptor {
+  node: ObjectLiteralPropertyNode;
+  name: string;
+  value: Value;
+}
+
+export interface ArrayValue extends BaseValue {
+  valueKind: "ArrayValue";
+  node: ArrayLiteralNode;
+  values: Value[];
+}
+
+export interface ScalarValue extends BaseValue {
+  valueKind: "ScalarValue";
+  scalar: Scalar;
+  value: { name: string; args: Value[] };
+}
+
+export interface NumericValue extends BaseValue {
+  valueKind: "NumericValue";
+  scalar: Scalar | undefined;
+  value: Numeric;
+}
+export interface StringValue extends BaseValue {
+  valueKind: "StringValue";
+  scalar: Scalar | undefined;
+  value: string;
+}
+export interface BooleanValue extends BaseValue {
+  valueKind: "BooleanValue";
+  scalar: Scalar | undefined;
+  value: boolean;
+}
+export interface EnumValue extends BaseValue {
+  valueKind: "EnumValue";
+  value: EnumMember;
+}
+export interface NullValue extends BaseValue {
+  valueKind: "NullValue";
+  value: null;
+}
+
+//#endregion Values
 
 export interface Scalar extends BaseType, DecoratedType, TemplatedTypeBase {
   kind: "Scalar";
@@ -308,11 +472,20 @@ export interface Scalar extends BaseType, DecoratedType, TemplatedTypeBase {
    */
   derivedScalars: Scalar[];
 
+  constructors: Map<string, ScalarConstructor>;
   /**
-   * Late-bound symbol of this model type.
+   * Late-bound symbol of this scalar type.
    * @internal
    */
   symbol?: Sym;
+}
+
+export interface ScalarConstructor extends BaseType {
+  kind: "ScalarConstructor";
+  node: ScalarConstructorNode;
+  name: string;
+  scalar: Scalar;
+  parameters: SignatureFunctionParameter[];
 }
 
 export interface Interface extends BaseType, DecoratedType, TemplatedTypeBase {
@@ -360,6 +533,12 @@ export interface Enum extends BaseType, DecoratedType {
    * obtained via `...` are inserted where the spread appears in source.
    */
   members: RekeyableMap<string, EnumMember>;
+
+  /**
+   * Late-bound symbol of this enum type.
+   * @internal
+   */
+  symbol?: Sym;
 }
 
 export interface EnumMember extends BaseType, DecoratedType {
@@ -472,6 +651,7 @@ export interface NumericLiteral extends BaseType {
   kind: "Number";
   node?: NumericLiteralNode;
   value: number;
+  numericValue: Numeric;
   valueAsString: string;
 }
 
@@ -483,6 +663,8 @@ export interface BooleanLiteral extends BaseType {
 
 export interface StringTemplate extends BaseType {
   kind: "StringTemplate";
+  /** If the template can be render as as string this is the string value */
+  stringValue?: string;
   node: StringTemplateExpressionNode;
   spans: StringTemplateSpan[];
 }
@@ -505,7 +687,7 @@ export interface StringTemplateSpanValue extends BaseType {
 
 export interface Tuple extends BaseType {
   kind: "Tuple";
-  node: TupleExpressionNode;
+  node: TupleExpressionNode | ArrayLiteralNode;
   values: Type[];
 }
 
@@ -546,8 +728,8 @@ export interface UnionVariant extends BaseType, DecoratedType {
 export interface TemplateParameter extends BaseType {
   kind: "TemplateParameter";
   node: TemplateParameterDeclarationNode;
-  constraint?: Type | ValueType;
-  default?: Type;
+  constraint?: MixedParameterConstraint;
+  default?: Type | Value | IndeterminateEntity;
 }
 
 export interface Decorator extends BaseType {
@@ -555,8 +737,8 @@ export interface Decorator extends BaseType {
   node: DecoratorDeclarationStatementNode;
   name: `@${string}`;
   namespace: Namespace;
-  target: FunctionParameter;
-  parameters: FunctionParameter[];
+  target: MixedFunctionParameter;
+  parameters: MixedFunctionParameter[];
   implementation: (...args: unknown[]) => void;
 }
 
@@ -565,27 +747,43 @@ export interface FunctionType extends BaseType {
   node?: FunctionDeclarationStatementNode;
   namespace?: Namespace;
   name: string;
-  parameters: FunctionParameter[];
+  parameters: MixedFunctionParameter[];
   returnType: Type;
   implementation: (...args: unknown[]) => unknown;
 }
 
-export interface FunctionParameter extends BaseType {
+export interface FunctionParameterBase extends BaseType {
   kind: "FunctionParameter";
   node: FunctionParameterNode;
   name: string;
-  type: Type | ValueType;
   optional: boolean;
   rest: boolean;
 }
+
+/** Represent a function parameter that could accept types or values in the TypeSpec program. */
+export interface MixedFunctionParameter extends FunctionParameterBase {
+  mixed: true;
+  type: MixedParameterConstraint;
+}
+/** Represent a function parameter that represent the parameter signature(i.e the type would be the type of the value passed) */
+export interface SignatureFunctionParameter extends FunctionParameterBase {
+  mixed: false;
+  type: Type;
+}
+export type FunctionParameter = MixedFunctionParameter | SignatureFunctionParameter;
 
 export interface Sym {
   readonly flags: SymbolFlags;
 
   /**
-   * Nodes which contribute to this declaration
+   * Nodes which contribute to this declaration, present if SymbolFlags.Declaration is set.
    */
   readonly declarations: readonly Node[];
+
+  /**
+   * Node which resulted in this symbol, present if SymbolFlags.Declaration is not set.
+   */
+  readonly node: Node;
 
   /**
    * The name of the symbol
@@ -640,10 +838,107 @@ export interface Sym {
 export interface SymbolLinks {
   type?: Type;
 
-  // for types which can be instantiated, we split `type` into declaredType and
-  // a map of instantiations.
+  /** For types that can be instanitated this is the type of the declaration */
   declaredType?: Type;
+  /** For types that can be instanitated those are the types per instantiation */
   instantiations?: TypeInstantiationMap;
+
+  /** For const statements the value of the const */
+  value?: Value | null;
+
+  /**
+   * When a symbol contains unknown members, symbol lookup during
+   * name resolution should always return unknown if it can't definitely
+   * find a member.
+   */
+  hasUnknownMembers?: boolean;
+
+  /**
+   * True if we have completed the early binding of member symbols for this model during
+   * the name resolution phase.
+   */
+  membersBound?: boolean;
+
+  /**
+   * The symbol aliased by an alias symbol. When present, guaranteed to be a
+   * non-alias symbol. Will not be present when the name resolver could not
+   * determine a symbol for the alias, e.g. when it is a computed type.
+   */
+  aliasedSymbol?: Sym;
+
+  /**
+   * The result of resolving the aliased reference. When resolved, aliasedSymbol
+   * will contain the resolved symbol. Otherwise, aliasedSymbol may be present
+   * if the alias is a type literal with a symbol, otherwise it will be
+   * undefined.
+   */
+  aliasResolutionResult?: ResolutionResultFlags;
+
+  // TODO: any better idea?
+  aliasResolutionIsTemplate?: boolean;
+
+  /**
+   * The symbol for the constraint of a type parameter. Will not be present when
+   * the name resolver could not determine a symbol for the constraint, e.g.
+   * when it is a computed type.
+   */
+  constraintSymbol?: Sym;
+
+  /**
+   * The result of resolving the type parameter constraint. When resolved,
+   * constraintSymbol will contain the resolved symbol. Otherwise,
+   * constraintSymbol may be present if the constraint is a type literal with a
+   * symbol, otherwise it will be undefined.
+   */
+  constraintResolutionResult?: ResolutionResultFlags;
+}
+
+export interface ResolutionResult {
+  resolutionResult: ResolutionResultFlags;
+  isTemplateInstantiation?: boolean;
+  resolvedSymbol: Sym | undefined;
+  finalSymbol: Sym | undefined;
+  ambiguousSymbols?: Sym[];
+}
+
+export interface NodeLinks {
+  /** the result of type checking this node */
+  resolvedType?: Type;
+
+  /**The syntax symbol resolved by this node. */
+  resolvedSymbol?: Sym;
+
+  /** If the resolvedSymbol is an alias point to the symbol the alias reference(recursively), otherwise is the same as resolvedSymbol */
+  finalSymbol?: Sym | undefined;
+
+  /**
+   * If the link involve template argument.
+   * Note that this only catch if template arguments are used. If referencing the default instance(e.g Foo for Foo<string = "abc">) this will not be set to true.
+   * This is by design as the symbol reference has different meaning depending on the context:
+   * - For augment decorator it would reference the template declaration
+   * - For type references it would reference the default instance.
+   */
+  isTemplateInstantiation?: boolean;
+
+  /**
+   * The result of resolution of this reference node.
+   *
+   * When the the result is `Resolved`, `resolvedSymbol` contains the result.
+   **/
+  resolutionResult?: ResolutionResultFlags;
+
+  /** If the resolution result is Ambiguous list of symbols that are */
+  ambiguousSymbols?: Sym[];
+}
+
+export enum ResolutionResultFlags {
+  None = 0,
+  Resolved = 1 << 1,
+  Unknown = 1 << 2,
+  Ambiguous = 1 << 3,
+  NotFound = 1 << 4,
+
+  ResolutionFailed = Unknown | Ambiguous | NotFound,
 }
 
 /**
@@ -656,53 +951,70 @@ export interface SymbolTable extends ReadonlyMap<string, Sym> {
   readonly duplicates: ReadonlyMap<Sym, ReadonlySet<Sym>>;
 }
 
+export interface MutableSymbolTable extends SymbolTable {
+  set(key: string, value: Sym): void;
+
+  /**
+   * Put the symbols in the source table into this table.
+   * @param source table to copy
+   * @param parentSym Parent symbol that the source symbol should update to.
+   */
+  include(source: SymbolTable, parentSym?: Sym): void;
+}
+
 // prettier-ignore
 export const enum SymbolFlags {
   None                  = 0,
   Model                 = 1 << 1,
-  ModelProperty         = 1 << 2,
-  Scalar                = 1 << 3,
-  Operation             = 1 << 4,
-  Enum                  = 1 << 5,
-  EnumMember            = 1 << 6,
-  Interface             = 1 << 7,
-  InterfaceMember       = 1 << 8,
-  Union                 = 1 << 9,
-  UnionVariant          = 1 << 10,
-  Alias                 = 1 << 11,
-  Namespace             = 1 << 12,
-  Projection            = 1 << 13,
-  Decorator             = 1 << 14,
-  TemplateParameter     = 1 << 15,
-  ProjectionParameter   = 1 << 16,
-  Function              = 1 << 17,
-  FunctionParameter     = 1 << 18,
-  Using                 = 1 << 19,
-  DuplicateUsing        = 1 << 20,
-  SourceFile            = 1 << 21,
-  Declaration           = 1 << 22,
-  Implementation        = 1 << 23,
+  Scalar                = 1 << 2,
+  Operation             = 1 << 3,
+  Enum                  = 1 << 4,
+  Interface             = 1 << 5,
+  Union                 = 1 << 6,
+  Alias                 = 1 << 7,
+  Namespace             = 1 << 8,
+  Projection            = 1 << 9,
+  Decorator             = 1 << 10,
+  TemplateParameter     = 1 << 11,
+  ProjectionParameter   = 1 << 12,
+  Function              = 1 << 13,
+  FunctionParameter     = 1 << 14,
+  Using                 = 1 << 15,
+  DuplicateUsing        = 1 << 16,
+  SourceFile            = 1 << 17,
+  Member                = 1 << 18,
+  Const                 = 1 << 19,
+
+
+  /**
+   * A symbol which represents a declaration. Such symbols will have at least
+   * one entry in the `declarations[]` array referring to a node with an `id`.
+   * 
+   * Symbols which do not represent declarations 
+   */
+  Declaration           = 1 << 20,
+
+  Implementation        = 1 << 21,
   
   /**
    * A symbol which was late-bound, in which case, the type referred to
    * by this symbol is stored directly in the symbol.
    */
-  LateBound = 1 << 24,
+  LateBound = 1 << 22,
 
   ExportContainer = Namespace | SourceFile,
   /**
    * Symbols whose members will be late bound (and stored on the type)
    */
-  MemberContainer = Model | Enum | Union | Interface,
-  Member = ModelProperty | EnumMember | UnionVariant | InterfaceMember,
+  MemberContainer = Model | Enum | Union | Interface | Scalar,
 }
 
 /**
  * Maps type arguments to instantiated type.
  */
 export interface TypeInstantiationMap {
-  get(args: readonly Type[]): Type | undefined;
-  set(args: readonly Type[], type: Type): void;
+  get(args: readonly (Type | Value | IndeterminateEntity)[]): Type | undefined;
+  set(args: readonly (Type | Value | IndeterminateEntity)[], type: Type): void;
 }
 
 /**
@@ -781,6 +1093,7 @@ export enum SyntaxKind {
   Doc,
   DocText,
   DocParamTag,
+  DocPropTag,
   DocReturnsTag,
   DocErrorsTag,
   DocTemplateTag,
@@ -818,6 +1131,14 @@ export enum SyntaxKind {
   Return,
   JsNamespaceDeclaration,
   TemplateArgument,
+  TypeOfExpression,
+  ObjectLiteral,
+  ObjectLiteralProperty,
+  ObjectLiteralSpreadProperty,
+  ArrayLiteral,
+  ConstStatement,
+  CallExpression,
+  ScalarConstructor,
 }
 
 export const enum NodeFlags {
@@ -863,11 +1184,49 @@ export interface BaseNode extends TextRange {
    * you will likely only access symbol in cases where you know the node has a symbol.
    */
   readonly symbol: Sym;
+  /** Unique id across the process used to look up NodeLinks */
+  _id?: number;
 }
 
 export interface TemplateDeclarationNode {
   readonly templateParameters: readonly TemplateParameterDeclarationNode[];
+  readonly templateParametersRange: TextRange;
   readonly locals?: SymbolTable;
+}
+
+/**
+ * owner node and other related information according to the position
+ */
+export interface PositionDetail {
+  readonly node: Node | undefined;
+  readonly position: number;
+  readonly char: number;
+  readonly preChar: number;
+  readonly nextChar: number;
+  readonly inTrivia: boolean;
+
+  /**
+   * if the position is in a trivia, return the start position of the trivia containing the position
+   * if the position is not a trivia, return the start position of the trivia before the text(identifier code) containing the position
+   *
+   * Please be aware that this may not be the pre node in the tree because some non-trivia char is ignored in the tree but will counted here
+   *
+   * also comments are considered as trivia
+   */
+  readonly triviaStartPosition: number;
+  /**
+   * if the position is in a trivia, return the end position (exclude as other 'end' means) of the trivia containing the position
+   * if the position is not a trivia, return the end position (exclude as other 'end' means) of the trivia after the node containing the position
+   *
+   * Please be aware that this may not be the next node in the tree because some non-trivia char is ignored in the tree but will considered here
+   *
+   * also comments are considered as trivia
+   */
+  readonly triviaEndPosition: number;
+  /** get the PositionDetail of positionBeforeTrivia */
+  readonly getPositionDetailBeforeTrivia: () => PositionDetail;
+  /** get the PositionDetail of positionAfterTrivia */
+  readonly getPositionDetailAfterTrivia: () => PositionDetail;
 }
 
 export type Node =
@@ -913,7 +1272,12 @@ export type Node =
   | ProjectionModelPropertyNode
   | ProjectionModelSpreadPropertyNode
   | ProjectionStatementNode
-  | ProjectionNode;
+  | ProjectionNode
+  | ObjectLiteralNode
+  | ObjectLiteralPropertyNode
+  | ObjectLiteralSpreadPropertyNode
+  | ScalarConstructorNode
+  | ArrayLiteralNode;
 
 /**
  * Node that can be used as template
@@ -934,20 +1298,23 @@ export type MemberContainerNode =
   | ModelExpressionNode
   | InterfaceStatementNode
   | EnumStatementNode
-  | UnionStatementNode;
+  | UnionStatementNode
+  | IntersectionExpressionNode
+  | ScalarStatementNode;
 
 export type MemberNode =
   | ModelPropertyNode
   | EnumMemberNode
   | OperationStatementNode
-  | UnionVariantNode;
+  | UnionVariantNode
+  | ScalarConstructorNode;
 
-export type MemberContainerType = Model | Enum | Interface | Union;
+export type MemberContainerType = Model | Enum | Interface | Union | Scalar;
 
 /**
  * Type that can be used as members of a container type.
  */
-export type MemberType = ModelProperty | EnumMember | Operation | UnionVariant;
+export type MemberType = ModelProperty | EnumMember | Operation | UnionVariant | ScalarConstructor;
 
 export type Comment = LineComment | BlockComment;
 
@@ -998,6 +1365,8 @@ export type Statement =
   | DecoratorDeclarationStatementNode
   | FunctionDeclarationStatementNode
   | AugmentDecoratorStatementNode
+  | ConstStatementNode
+  | CallExpressionNode
   | EmptyStatementNode
   | InvalidStatementNode
   | ProjectionStatementNode;
@@ -1019,6 +1388,7 @@ export type Declaration =
   | ProjectionLambdaParameterDeclarationNode
   | EnumStatementNode
   | AliasStatementNode
+  | ConstStatementNode
   | DecoratorDeclarationStatementNode
   | FunctionDeclarationStatementNode;
 
@@ -1069,11 +1439,15 @@ export type Expression =
   | ArrayExpressionNode
   | MemberExpressionNode
   | ModelExpressionNode
+  | ObjectLiteralNode
+  | ArrayLiteralNode
   | TupleExpressionNode
   | UnionExpressionNode
   | IntersectionExpressionNode
   | TypeReferenceNode
   | ValueOfExpressionNode
+  | TypeOfExpressionNode
+  | CallExpressionNode
   | StringLiteralNode
   | NumericLiteralNode
   | BooleanLiteralNode
@@ -1158,6 +1532,7 @@ export interface OperationStatementNode extends BaseNode, DeclarationNode, Templ
 export interface ModelStatementNode extends BaseNode, DeclarationNode, TemplateDeclarationNode {
   readonly kind: SyntaxKind.ModelStatement;
   readonly properties: readonly (ModelPropertyNode | ModelSpreadPropertyNode)[];
+  readonly bodyRange: TextRange;
   readonly extends?: Expression;
   readonly is?: Expression;
   readonly decorators: readonly DecoratorExpressionNode[];
@@ -1168,12 +1543,22 @@ export interface ScalarStatementNode extends BaseNode, DeclarationNode, Template
   readonly kind: SyntaxKind.ScalarStatement;
   readonly extends?: TypeReferenceNode;
   readonly decorators: readonly DecoratorExpressionNode[];
+  readonly members: readonly ScalarConstructorNode[];
+  readonly bodyRange: TextRange;
   readonly parent?: TypeSpecScriptNode | NamespaceStatementNode;
+}
+
+export interface ScalarConstructorNode extends BaseNode {
+  readonly kind: SyntaxKind.ScalarConstructor;
+  readonly id: IdentifierNode;
+  readonly parameters: FunctionParameterNode[];
+  readonly parent?: ScalarStatementNode;
 }
 
 export interface InterfaceStatementNode extends BaseNode, DeclarationNode, TemplateDeclarationNode {
   readonly kind: SyntaxKind.InterfaceStatement;
   readonly operations: readonly OperationStatementNode[];
+  readonly bodyRange: TextRange;
   readonly extends: readonly TypeReferenceNode[];
   readonly decorators: readonly DecoratorExpressionNode[];
   readonly parent?: TypeSpecScriptNode | NamespaceStatementNode;
@@ -1220,6 +1605,18 @@ export interface AliasStatementNode extends BaseNode, DeclarationNode, TemplateD
   readonly parent?: TypeSpecScriptNode | NamespaceStatementNode;
 }
 
+export interface ConstStatementNode extends BaseNode, DeclarationNode {
+  readonly kind: SyntaxKind.ConstStatement;
+  readonly value: Expression;
+  readonly type?: Expression;
+  readonly parent?: TypeSpecScriptNode | NamespaceStatementNode;
+}
+export interface CallExpressionNode extends BaseNode {
+  readonly kind: SyntaxKind.CallExpression;
+  readonly target: MemberExpressionNode | IdentifierNode;
+  readonly arguments: Expression[];
+}
+
 export interface InvalidStatementNode extends BaseNode {
   readonly kind: SyntaxKind.InvalidStatement;
   readonly decorators: readonly DecoratorExpressionNode[];
@@ -1232,6 +1629,7 @@ export interface EmptyStatementNode extends BaseNode {
 export interface ModelExpressionNode extends BaseNode {
   readonly kind: SyntaxKind.ModelExpression;
   readonly properties: (ModelPropertyNode | ModelSpreadPropertyNode)[];
+  readonly bodyRange: TextRange;
 }
 
 export interface ArrayExpressionNode extends BaseNode {
@@ -1257,6 +1655,30 @@ export interface ModelSpreadPropertyNode extends BaseNode {
   readonly kind: SyntaxKind.ModelSpreadProperty;
   readonly target: TypeReferenceNode;
   readonly parent?: ModelStatementNode | ModelExpressionNode;
+}
+
+export interface ObjectLiteralNode extends BaseNode {
+  readonly kind: SyntaxKind.ObjectLiteral;
+  readonly properties: (ObjectLiteralPropertyNode | ObjectLiteralSpreadPropertyNode)[];
+  readonly bodyRange: TextRange;
+}
+
+export interface ObjectLiteralPropertyNode extends BaseNode {
+  readonly kind: SyntaxKind.ObjectLiteralProperty;
+  readonly id: IdentifierNode;
+  readonly value: Expression;
+  readonly parent?: ObjectLiteralNode;
+}
+
+export interface ObjectLiteralSpreadPropertyNode extends BaseNode {
+  readonly kind: SyntaxKind.ObjectLiteralSpreadProperty;
+  readonly target: TypeReferenceNode;
+  readonly parent?: ObjectLiteralNode;
+}
+
+export interface ArrayLiteralNode extends BaseNode {
+  readonly kind: SyntaxKind.ArrayLiteral;
+  readonly values: readonly Expression[];
 }
 
 export type LiteralNode =
@@ -1349,6 +1771,11 @@ export interface IntersectionExpressionNode extends BaseNode {
 
 export interface ValueOfExpressionNode extends BaseNode {
   readonly kind: SyntaxKind.ValueOfExpression;
+  readonly target: Expression;
+}
+
+export interface TypeOfExpressionNode extends BaseNode {
+  readonly kind: SyntaxKind.TypeOfExpression;
   readonly target: Expression;
 }
 
@@ -1632,6 +2059,9 @@ export enum IdentifierKind {
   Function,
   Using,
   Declaration,
+  ModelExpressionProperty,
+  ModelStatementProperty,
+  ObjectLiteralProperty,
   Other,
 }
 
@@ -1652,6 +2082,7 @@ export type DocTag =
   | DocReturnsTagNode
   | DocErrorsTagNode
   | DocParamTagNode
+  | DocPropTagNode
   | DocTemplateTagNode
   | DocUnknownTagNode;
 export type DocContent = DocTextNode;
@@ -1672,6 +2103,11 @@ export interface DocErrorsTagNode extends DocTagBaseNode {
 export interface DocParamTagNode extends DocTagBaseNode {
   readonly kind: SyntaxKind.DocParamTag;
   readonly paramName: IdentifierNode;
+}
+
+export interface DocPropTagNode extends DocTagBaseNode {
+  readonly kind: SyntaxKind.DocPropTag;
+  readonly propName: IdentifierNode;
 }
 
 export interface DocTemplateTagNode extends DocTagBaseNode {
@@ -1766,31 +2202,37 @@ export type LocationContext =
 
 /** Defined in the user project. */
 export interface ProjectLocationContext {
-  type: "project";
+  readonly type: "project";
+  readonly flags?: PackageFlags;
 }
 
 /** Built-in */
 export interface CompilerLocationContext {
-  type: "compiler";
+  readonly type: "compiler";
 }
 
 /** Refer to a type that was not declared in a file */
 export interface SyntheticLocationContext {
-  type: "synthetic";
+  readonly type: "synthetic";
 }
 
 /** Defined in a library. */
 export interface LibraryLocationContext {
-  type: "library";
-  metadata: ModuleLibraryMetadata;
+  readonly type: "library";
+
+  /** Library metadata */
+  readonly metadata: ModuleLibraryMetadata;
+
+  /** Module definition */
+  readonly flags?: PackageFlags;
 }
 
 export interface LibraryInstance {
   module: ModuleResolutionResult;
-  entrypoint: JsSourceFileNode | undefined;
+  entrypoint: JsSourceFileNode;
   metadata: LibraryMetadata;
   definition?: TypeSpecLibrary<any>;
-  linter: LinterDefinition;
+  linter: LinterResolvedDefinition;
 }
 
 export type LibraryMetadata = FileLibraryMetadata | ModuleLibraryMetadata;
@@ -1817,10 +2259,10 @@ export interface FileLibraryMetadata extends LibraryMetadataBase {
 
 /** Data for a library. Either loaded via a node_modules package or a standalone js file  */
 export interface ModuleLibraryMetadata extends LibraryMetadataBase {
-  type: "module";
+  readonly type: "module";
 
   /** Library name as specified in the package.json or in exported $lib. */
-  name: string;
+  readonly name: string;
 }
 
 export interface TextRange {
@@ -1846,13 +2288,24 @@ export interface SourceLocation extends TextRange {
 export const NoTarget = Symbol.for("NoTarget");
 
 /** Diagnostic target that can be used when working with TypeSpec types.  */
-export type TypeSpecDiagnosticTarget = Node | Type | Sym;
+export type TypeSpecDiagnosticTarget = Node | Entity | Sym | TemplateInstanceTarget;
+
+/** Represent a diagnostic target that happens in a template instance context.  */
+export interface TemplateInstanceTarget {
+  /** Node target */
+  readonly node: Node;
+  /** Template mapper used. */
+  readonly templateMapper: TypeMapper;
+}
+
 export type DiagnosticTarget = TypeSpecDiagnosticTarget | SourceLocation;
 
 export type DiagnosticSeverity = "error" | "warning";
 
 export interface Diagnostic {
   code: string;
+  /** @internal Diagnostic documentation url */
+  readonly url?: string;
   severity: DiagnosticSeverity;
   message: string;
   target: DiagnosticTarget | typeof NoTarget;
@@ -2055,9 +2508,35 @@ export type DiagnosticFormat<
     ? { format: Record<A[number], string> }
     : Record<string, unknown>;
 
+/**
+ * Declare a diagnostic that can be reported by the library.
+ *
+ * @example
+ *
+ * ```ts
+ * unterminated: {
+ *   severity: "error",
+ *   description: "Unterminated token.",
+ *   url: "https://example.com/docs/diags/unterminated",
+ *   messages: {
+ *     default: paramMessage`Unterminated ${"token"}.`,
+ *   },
+ * },
+ * ```
+ */
 export interface DiagnosticDefinition<M extends DiagnosticMessages> {
+  /**
+   * Diagnostic severity.
+   * - `warning` - Suppressable, should be used to represent potential issues but not blocking.
+   * - `error` - Non-suppressable, should be used to represent failure to move forward.
+   */
   readonly severity: "warning" | "error";
+  /** Messages that can be reported with the diagnostic. */
   readonly messages: M;
+  /** Short description of the diagnostic */
+  readonly description?: string;
+  /** Specifies the URL at which the full documentation can be accessed. */
+  readonly url?: string;
 }
 
 export interface DiagnosticMessages {
@@ -2077,11 +2556,11 @@ export interface DiagnosticCreator<T extends { [code: string]: DiagnosticMessage
   readonly type: T;
   readonly diagnostics: DiagnosticMap<T>;
   createDiagnostic<C extends keyof T, M extends keyof T[C] = "default">(
-    diag: DiagnosticReport<T, C, M>
+    diag: DiagnosticReport<T, C, M>,
   ): Diagnostic;
   reportDiagnostic<C extends keyof T, M extends keyof T[C] = "default">(
     program: Program,
-    diag: DiagnosticReport<T, C, M>
+    diag: DiagnosticReport<T, C, M>,
   ): void;
 }
 
@@ -2103,7 +2582,7 @@ export interface JSONSchemaValidator {
    */
   validate(
     config: unknown,
-    target: YamlScript | YamlPathTarget | SourceFile | typeof NoTarget
+    target: YamlScript | YamlPathTarget | SourceFile | typeof NoTarget,
   ): Diagnostic[];
 }
 
@@ -2156,9 +2635,54 @@ export interface TypeSpecLibraryDef<
   readonly state?: Record<State, StateDef>;
 }
 
+/**
+ * Type for the $decorators export from libraries.
+ *
+ * @example
+ * ```
+ * export const $decorators = {
+ *   "Azure.Core": {
+ *     flags: $flags,
+ *     "foo-bar": fooBarDecorator
+ *   }
+ * }
+ * ```
+ */
+export interface DecoratorImplementations {
+  readonly [namespace: string]: {
+    readonly [name: string]: DecoratorFunction;
+  };
+}
+
+export interface PackageFlags {
+  /**
+   * Decorator arg marshalling algorithm. Specify how TypeSpec values are marshalled to decorator arguments.
+   * - `new` - New recommended behavior
+   *  - string value -> `string`
+   *  - numeric value -> `number` if the constraint can be represented as a JS number, Numeric otherwise(e.g. for types int64, decimal128, numeric, etc.)
+   *  - boolean value -> `boolean`
+   *  - null value -> `null`
+   *
+   * - `legacy` - DEPRECATED -  Behavior before version 0.56.0.
+   *  - string value -> `string`
+   *  - numeric value -> `number`
+   *  - boolean value -> `boolean`
+   *  - null value -> `NullType`
+   * @default new
+   */
+  readonly decoratorArgMarshalling?: "legacy" | "new";
+}
+
 export interface LinterDefinition {
   rules: LinterRuleDefinition<string, DiagnosticMessages>[];
   ruleSets?: Record<string, LinterRuleSet>;
+}
+
+export interface LinterResolvedDefinition {
+  readonly rules: LinterRule<string, DiagnosticMessages>[];
+  readonly ruleSets: {
+    [name: string]: LinterRuleSet;
+  };
 }
 
 export interface LinterRuleDefinition<N extends string, DM extends DiagnosticMessages> {
@@ -2244,10 +2768,10 @@ export interface TypeSpecLibrary<
 
   reportDiagnostic<C extends keyof T, M extends keyof T[C]>(
     program: Program,
-    diag: DiagnosticReport<T, C, M>
+    diag: DiagnosticReport<T, C, M>,
   ): void;
   createDiagnostic<C extends keyof T, M extends keyof T[C]>(
-    diag: DiagnosticReport<T, C, M>
+    diag: DiagnosticReport<T, C, M>,
   ): Diagnostic;
 
   /**
@@ -2318,6 +2842,8 @@ export interface EmitContext<TOptions extends object = Record<string, never>> {
   /**
    * Get an asset emitter to write emitted output to disk using a TypeEmitter
    *
+   * @deprecated call {@link createAssetEmitter} directly instead.
+   *
    * @param TypeEmitterClass The TypeEmitter to construct your emitted output
    */
   getAssetEmitter<T>(TypeEmitterClass: typeof TypeEmitter<T, TOptions>): AssetEmitter<T, TOptions>;
@@ -2336,7 +2862,20 @@ export interface ProcessedLog {
   level: LogLevel;
   message: string;
   code?: string;
+  /** Documentation for the error code. */
+  url?: string;
+
+  /** Log location */
   sourceLocation?: SourceLocation;
+
+  /** @internal */
+  related?: RelatedSourceLocation[];
+}
+
+/** @internal */
+export interface RelatedSourceLocation {
+  readonly message: string;
+  readonly location: SourceLocation;
 }
 
 export interface LogSink {

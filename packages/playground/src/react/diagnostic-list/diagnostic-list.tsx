@@ -5,7 +5,7 @@ import {
   type DiagnosticTarget,
   type NoTarget,
 } from "@typespec/compiler";
-import { FunctionComponent, memo, useCallback } from "react";
+import { memo, useCallback, type FunctionComponent } from "react";
 import style from "./diagnostic-list.module.css";
 
 export interface DiagnosticListProps {
@@ -17,16 +17,15 @@ export const DiagnosticList: FunctionComponent<DiagnosticListProps> = ({
   diagnostics,
   onDiagnosticSelected,
 }) => {
-  if (diagnostics.length === 0) {
-    return <div className={style["list"]}>No errors</div>;
-  }
-
   const handleItemSelected = useCallback(
     (diagnostic: Diagnostic) => {
       onDiagnosticSelected?.(diagnostic);
     },
-    [onDiagnosticSelected]
+    [onDiagnosticSelected],
   );
+  if (diagnostics.length === 0) {
+    return <div className={style["list"]}>No errors</div>;
+  }
   return (
     <div className={style["list"]}>
       {diagnostics.map((x, i) => {
@@ -50,7 +49,7 @@ const DiagnosticItem: FunctionComponent<DiagnosticItemProps> = ({ diagnostic, on
       <div
         className={mergeClasses(
           (style["item-severity"],
-          style[diagnostic.severity === "error" ? "item--error" : "item--warning"])
+          style[diagnostic.severity === "error" ? "item--error" : "item--warning"]),
         )}
       >
         {diagnostic.severity}

@@ -1,21 +1,27 @@
 import { mutate } from "../utils/misc.js";
-import { compilerAssert } from "./diagnostics.js";
-import { getLocationContext } from "./helpers/index.js";
+import { compilerAssert, reportDeprecated } from "./diagnostics.js";
+import { getLocationContext } from "./helpers/location-context.js";
 import { visitChildren } from "./parser.js";
-import { Program } from "./program.js";
+import type { Program } from "./program.js";
 import {
   AliasStatementNode,
+  ConstStatementNode,
   Declaration,
   DecoratorDeclarationStatementNode,
+  DecoratorImplementations,
+  EnumMemberNode,
   EnumStatementNode,
   FileLibraryMetadata,
   FunctionDeclarationStatementNode,
   FunctionParameterNode,
   InterfaceStatementNode,
+  IntersectionExpressionNode,
   JsNamespaceDeclarationNode,
   JsSourceFileNode,
   ModelExpressionNode,
+  ModelPropertyNode,
   ModelStatementNode,
+  MutableSymbolTable,
   NamespaceStatementNode,
   Node,
   NodeFlags,
@@ -25,6 +31,7 @@ import {
   ProjectionNode,
   ProjectionParameterDeclarationNode,
   ProjectionStatementNode,
+  ScalarConstructorNode,
   ScalarStatementNode,
   ScopeNode,
   Sym,
@@ -34,38 +41,43 @@ import {
   TemplateParameterDeclarationNode,
   TypeSpecScriptNode,
   UnionStatementNode,
+  UnionVariantNode,
   UsingStatementNode,
 } from "./types.js";
 
 // Use a regular expression to define the prefix for TypeSpec-exposed functions
 // defined in JavaScript modules
 const DecoratorFunctionPattern = /^\$/;
-const SymbolTable = class extends Map<string, Sym> implements SymbolTable {
+const SymbolTable = class extends Map<string, Sym> implements MutableSymbolTable {
   duplicates = new Map<Sym, Set<Sym>>();
 
   constructor(source?: SymbolTable) {
     super();
     if (source) {
-      for (const [key, value] of source) {
-        // Note: shallow copy of value here so we can mutate flags on set.
-        super.set(key, { ...value });
-      }
-      for (const [key, value] of source.duplicates) {
-        this.duplicates.set(key, new Set(value));
-      }
+      this.include(source);
+    }
+  }
+
+  /** {@inheritdoc MutableSymboleTable} */
+  include(source: SymbolTable, parentSym?: Sym) {
+    for (const [key, value] of source) {
+      super.set(key, { ...value, parent: parentSym ?? value.parent });
+    }
+    for (const [key, value] of source.duplicates) {
+      this.duplicates.set(key, new Set(value));
     }
   }
 
   // First set for a given key wins, but record all duplicates for diagnostics.
   set(key: string, value: Sym) {
     const existing = super.get(key);
+
     if (existing === undefined) {
       super.set(key, value);
     } else {
       if (existing.flags & SymbolFlags.Using) {
         mutate(existing).flags |= SymbolFlags.DuplicateUsing;
       }
-
       const duplicateArray = this.duplicates.get(existing);
       if (duplicateArray) {
         duplicateArray.add(value);
@@ -119,22 +131,47 @@ export function createBinder(program: Program): Binder {
     if ((sourceFile.symbol as any) !== undefined) {
       return;
     }
-    const tracer = program.tracer.sub("bind.js");
 
     fileNamespace = undefined;
     mutate(sourceFile).symbol = createSymbol(
       sourceFile,
       sourceFile.file.path,
-      SymbolFlags.SourceFile
+      SymbolFlags.SourceFile | SymbolFlags.Declaration,
     );
     const rootNs = sourceFile.esmExports["namespace"];
 
     for (const [key, member] of Object.entries(sourceFile.esmExports)) {
       let name: string;
       let kind: "decorator" | "function";
-      let containerSymbol = sourceFile.symbol;
-
-      if (typeof member === "function") {
+      if (key === "$flags") {
+        const context = getLocationContext(program, sourceFile);
+        if (context.type === "library" || context.type === "project") {
+          mutate(context).flags = member as any;
+          if ((member as any).decoratorArgMarshalling === "legacy") {
+            reportDeprecated(
+              program,
+              [
+                `decoratorArgMarshalling: "legacy" flag is deprecated and will be removed in a future release.`,
+                'Change value to "new" or remove the flag to use the current default behavior.',
+              ].join("\n"),
+              sourceFile,
+            );
+          }
+        }
+      } else if (key === "$decorators") {
+        const value: DecoratorImplementations = member as any;
+        for (const [namespaceName, decorators] of Object.entries(value)) {
+          for (const [decoratorName, decorator] of Object.entries(decorators)) {
+            bindFunctionImplementation(
+              namespaceName === "" ? [] : namespaceName.split("."),
+              "decorator",
+              decoratorName,
+              decorator,
+              sourceFile,
+            );
+          }
+        }
+      } else if (typeof member === "function") {
         // lots of 'any' casts here because control flow narrowing `member` to Function
         // isn't particularly useful it turns out.
         if (isFunctionName(key)) {
@@ -156,68 +193,83 @@ export function createBinder(program: Program): Binder {
           name = key;
           kind = "function";
         }
-
         const nsParts = resolveJSMemberNamespaceParts(rootNs, member);
-        for (const part of nsParts) {
-          const existingBinding = containerSymbol.exports!.get(part);
-          const jsNamespaceNode: JsNamespaceDeclarationNode = {
-            kind: SyntaxKind.JsNamespaceDeclaration,
-            id: {
-              kind: SyntaxKind.Identifier,
-              sv: part,
-              pos: 0,
-              end: 0,
-              flags: NodeFlags.None,
-              symbol: undefined!,
-            },
-            pos: sourceFile.pos,
-            end: sourceFile.end,
-            parent: sourceFile,
-            flags: NodeFlags.None,
-            symbol: undefined!,
-          };
-          const sym = createSymbol(jsNamespaceNode, part, SymbolFlags.Namespace, containerSymbol);
-          mutate(jsNamespaceNode).symbol = sym;
-          if (existingBinding) {
-            if (existingBinding.flags & SymbolFlags.Namespace) {
-              // since the namespace was "declared" as part of this source file,
-              // we can simply re-use it.
-              containerSymbol = existingBinding;
-            } else {
-              // we have some conflict, lets report a duplicate binding error.
-              mutate(containerSymbol.exports)!.set(part, sym);
-            }
-          } else {
-            mutate(sym).exports = createSymbolTable();
-            mutate(containerSymbol.exports!).set(part, sym);
-            containerSymbol = sym;
-          }
-        }
-        let sym;
-        if (kind === "decorator") {
-          tracer.trace(
-            "decorator",
-            `Bound decorator "@${name}" in namespace "${nsParts.join(".")}".`
-          );
-          sym = createSymbol(
-            sourceFile,
-            "@" + name,
-            SymbolFlags.Decorator | SymbolFlags.Implementation,
-            containerSymbol
-          );
-        } else {
-          tracer.trace("function", `Bound function "${name}" in namespace "${nsParts.join(".")}".`);
-          sym = createSymbol(
-            sourceFile,
-            name,
-            SymbolFlags.Function | SymbolFlags.Implementation,
-            containerSymbol
-          );
-        }
-        mutate(sym).value = member as any;
-        mutate(containerSymbol.exports)!.set(sym.name, sym);
+        bindFunctionImplementation(nsParts, kind, name, member as any, sourceFile);
       }
     }
+  }
+
+  function bindFunctionImplementation(
+    nsParts: string[],
+    kind: "decorator" | "function",
+    name: string,
+    fn: (...args: any[]) => any,
+    sourceFile: JsSourceFileNode,
+  ) {
+    let containerSymbol = sourceFile.symbol;
+
+    const tracer = program.tracer.sub("bind.js");
+
+    for (const part of nsParts) {
+      const existingBinding = containerSymbol.exports!.get(part);
+      const jsNamespaceNode: JsNamespaceDeclarationNode = {
+        kind: SyntaxKind.JsNamespaceDeclaration,
+        id: {
+          kind: SyntaxKind.Identifier,
+          sv: part,
+          pos: 0,
+          end: 0,
+          flags: NodeFlags.None,
+          symbol: undefined!,
+        },
+        pos: sourceFile.pos,
+        end: sourceFile.end,
+        parent: sourceFile,
+        flags: NodeFlags.None,
+        symbol: undefined!,
+      };
+      const sym = createSymbol(
+        jsNamespaceNode,
+        part,
+        SymbolFlags.Namespace | SymbolFlags.Declaration,
+        containerSymbol,
+      );
+      mutate(jsNamespaceNode).symbol = sym;
+      if (existingBinding) {
+        if (existingBinding.flags & SymbolFlags.Namespace) {
+          // since the namespace was "declared" as part of this source file,
+          // we can simply re-use it.
+          containerSymbol = existingBinding;
+        } else {
+          // we have some conflict, lets report a duplicate binding error.
+          mutate(containerSymbol.exports)!.set(part, sym);
+        }
+      } else {
+        mutate(sym).exports = createSymbolTable();
+        mutate(containerSymbol.exports!).set(part, sym);
+        containerSymbol = sym;
+      }
+    }
+    let sym;
+    if (kind === "decorator") {
+      tracer.trace("decorator", `Bound decorator "@${name}" in namespace "${nsParts.join(".")}".`);
+      sym = createSymbol(
+        sourceFile,
+        "@" + name,
+        SymbolFlags.Decorator | SymbolFlags.Declaration | SymbolFlags.Implementation,
+        containerSymbol,
+      );
+    } else {
+      tracer.trace("function", `Bound function "${name}" in namespace "${nsParts.join(".")}".`);
+      sym = createSymbol(
+        sourceFile,
+        name,
+        SymbolFlags.Function | SymbolFlags.Declaration | SymbolFlags.Implementation,
+        containerSymbol,
+      );
+    }
+    mutate(sym).value = fn;
+    mutate(containerSymbol.exports)!.set(sym.name, sym);
   }
 
   function resolveJSMemberNamespaceParts(rootNs: string | undefined, member: any) {
@@ -259,8 +311,17 @@ export function createBinder(program: Program): Binder {
       case SyntaxKind.ModelExpression:
         bindModelExpression(node);
         break;
+      case SyntaxKind.ModelProperty:
+        bindModelProperty(node);
+        break;
+      case SyntaxKind.IntersectionExpression:
+        bindIntersectionExpression(node);
+        break;
       case SyntaxKind.ScalarStatement:
         bindScalarStatement(node);
+        break;
+      case SyntaxKind.ScalarConstructor:
+        bindScalarConstructor(node);
         break;
       case SyntaxKind.InterfaceStatement:
         bindInterfaceStatement(node);
@@ -271,8 +332,17 @@ export function createBinder(program: Program): Binder {
       case SyntaxKind.AliasStatement:
         bindAliasStatement(node);
         break;
+      case SyntaxKind.ConstStatement:
+        bindConstStatement(node);
+        break;
       case SyntaxKind.EnumStatement:
         bindEnumStatement(node);
+        break;
+      case SyntaxKind.EnumMember:
+        bindEnumMember(node);
+        break;
+      case SyntaxKind.UnionVariant:
+        bindUnionVariant(node);
         break;
       case SyntaxKind.NamespaceStatement:
         bindNamespaceStatement(node);
@@ -365,7 +435,12 @@ export function createBinder(program: Program): Binder {
       }
       mutate(sym.declarations).push(node);
     } else {
-      sym = createSymbol(node, name, SymbolFlags.Projection, scope.symbol);
+      sym = createSymbol(
+        node,
+        name,
+        SymbolFlags.Projection | SymbolFlags.Declaration,
+        scope.symbol,
+      );
       mutate(table).set(name, sym);
     }
 
@@ -425,13 +500,13 @@ export function createBinder(program: Program): Binder {
   }
 
   function bindProjectionParameterDeclaration(node: ProjectionParameterDeclarationNode) {
-    declareSymbol(node, SymbolFlags.ProjectionParameter);
+    declareSymbol(node, SymbolFlags.ProjectionParameter | SymbolFlags.Declaration);
   }
 
   function bindProjectionLambdaParameterDeclaration(
-    node: ProjectionLambdaParameterDeclarationNode
+    node: ProjectionLambdaParameterDeclarationNode,
   ) {
-    declareSymbol(node, SymbolFlags.FunctionParameter);
+    declareSymbol(node, SymbolFlags.FunctionParameter | SymbolFlags.Declaration);
   }
 
   function bindProjectionLambdaExpression(node: ProjectionLambdaExpressionNode) {
@@ -439,11 +514,11 @@ export function createBinder(program: Program): Binder {
   }
 
   function bindTemplateParameterDeclaration(node: TemplateParameterDeclarationNode) {
-    declareSymbol(node, SymbolFlags.TemplateParameter);
+    declareSymbol(node, SymbolFlags.TemplateParameter | SymbolFlags.Declaration);
   }
 
   function bindModelStatement(node: ModelStatementNode) {
-    declareSymbol(node, SymbolFlags.Model);
+    declareSymbol(node, SymbolFlags.Model | SymbolFlags.Declaration);
     // Initialize locals for type parameters
     mutate(node).locals = new SymbolTable();
   }
@@ -452,35 +527,61 @@ export function createBinder(program: Program): Binder {
     bindSymbol(node, SymbolFlags.Model);
   }
 
+  function bindModelProperty(node: ModelPropertyNode) {
+    declareMember(node, SymbolFlags.Member, node.id.sv);
+  }
+
+  function bindIntersectionExpression(node: IntersectionExpressionNode) {
+    bindSymbol(node, SymbolFlags.Model);
+  }
+
   function bindScalarStatement(node: ScalarStatementNode) {
-    declareSymbol(node, SymbolFlags.Scalar);
+    declareSymbol(node, SymbolFlags.Scalar | SymbolFlags.Declaration);
     // Initialize locals for type parameters
     mutate(node).locals = new SymbolTable();
   }
 
+  function bindScalarConstructor(node: ScalarConstructorNode) {
+    declareMember(node, SymbolFlags.Member, node.id.sv);
+  }
+
   function bindInterfaceStatement(node: InterfaceStatementNode) {
-    declareSymbol(node, SymbolFlags.Interface);
+    declareSymbol(node, SymbolFlags.Interface | SymbolFlags.Declaration);
     mutate(node).locals = new SymbolTable();
   }
 
   function bindUnionStatement(node: UnionStatementNode) {
-    declareSymbol(node, SymbolFlags.Union);
+    declareSymbol(node, SymbolFlags.Union | SymbolFlags.Declaration);
     mutate(node).locals = new SymbolTable();
   }
 
   function bindAliasStatement(node: AliasStatementNode) {
-    declareSymbol(node, SymbolFlags.Alias);
+    declareSymbol(node, SymbolFlags.Alias | SymbolFlags.Declaration);
     // Initialize locals for type parameters
     mutate(node).locals = new SymbolTable();
   }
+  function bindConstStatement(node: ConstStatementNode) {
+    declareSymbol(node, SymbolFlags.Const | SymbolFlags.Declaration);
+  }
 
   function bindEnumStatement(node: EnumStatementNode) {
-    declareSymbol(node, SymbolFlags.Enum);
+    declareSymbol(node, SymbolFlags.Enum | SymbolFlags.Declaration);
+  }
+
+  function bindEnumMember(node: EnumMemberNode) {
+    declareMember(node, SymbolFlags.Member, node.id.sv);
+  }
+  function bindUnionVariant(node: UnionVariantNode) {
+    // cannot bind non named variant `union A { "a", "b"}`
+    if (node.id) {
+      declareMember(node, SymbolFlags.Member, node.id.sv);
+    }
   }
 
   function bindNamespaceStatement(statement: NamespaceStatementNode) {
+    const effectiveScope = fileNamespace ?? scope;
     // check if there's an existing symbol for this namespace
-    const existingBinding = (scope as NamespaceStatementNode).symbol.exports!.get(statement.id.sv);
+    const existingBinding = effectiveScope.symbol.exports!.get(statement.id.sv);
     if (existingBinding && existingBinding.flags & SymbolFlags.Namespace) {
       mutate(statement).symbol = existingBinding;
       // locals are never shared.
@@ -489,7 +590,7 @@ export function createBinder(program: Program): Binder {
     } else {
       // Initialize locals for non-exported symbols
       mutate(statement).locals = createSymbolTable();
-      declareSymbol(statement, SymbolFlags.Namespace);
+      declareSymbol(statement, SymbolFlags.Namespace | SymbolFlags.Declaration);
     }
 
     currentFile.namespaces.push(statement);
@@ -509,8 +610,14 @@ export function createBinder(program: Program): Binder {
   }
 
   function bindOperationStatement(statement: OperationStatementNode) {
-    if (scope.kind !== SyntaxKind.InterfaceStatement) {
-      declareSymbol(statement, SymbolFlags.Operation);
+    if (scope.kind === SyntaxKind.InterfaceStatement) {
+      declareMember(
+        statement,
+        SymbolFlags.Operation | SymbolFlags.Member | SymbolFlags.Declaration,
+        statement.id.sv,
+      );
+    } else {
+      declareSymbol(statement, SymbolFlags.Operation | SymbolFlags.Declaration);
     }
     mutate(statement).locals = createSymbolTable();
   }
@@ -524,18 +631,24 @@ export function createBinder(program: Program): Binder {
   }
 
   function bindFunctionParameter(node: FunctionParameterNode) {
-    const symbol = createSymbol(node, node.id.sv, SymbolFlags.FunctionParameter, scope.symbol);
+    const symbol = createSymbol(
+      node,
+      node.id.sv,
+      SymbolFlags.FunctionParameter | SymbolFlags.Declaration,
+      scope.symbol,
+    );
     mutate(node).symbol = symbol;
   }
 
   /**
-   * Declare a symbole for the given node in the current scope.
+   * Declare a symbol for the given node in the current scope.
    * @param node Node
    * @param flags Symbol flags
    * @param name Optional symbol name, default to the node id.
    * @returns Created Symbol
    */
   function declareSymbol(node: Declaration, flags: SymbolFlags, name?: string) {
+    compilerAssert(flags & SymbolFlags.Declaration, `Expected declaration symbol: ${name}`, node);
     switch (scope.kind) {
       case SyntaxKind.NamespaceStatement:
         return declareNamespaceMember(node, flags, name);
@@ -586,6 +699,28 @@ export function createBinder(program: Program): Binder {
     return symbol;
   }
 
+  /**
+   * Declare a member of a model, enum, union, or interface.
+   * @param node node of the member
+   * @param flags symbol flags
+   * @param name name of the symbol
+   */
+  function declareMember(
+    node:
+      | ModelPropertyNode
+      | OperationStatementNode
+      | EnumMemberNode
+      | UnionVariantNode
+      | ScalarConstructorNode,
+    flags: SymbolFlags,
+    name: string,
+  ) {
+    const symbol = createSymbol(node, name, flags, scope.symbol);
+    mutate(node).symbol = symbol;
+    mutate(scope.symbol.members!).set(name, symbol);
+    return symbol;
+  }
+
   function mergeNamespaceDeclarations(node: NamespaceStatementNode, scope: ScopeNode) {
     // we are declaring a namespace in either global scope, or a blockless namespace.
     const existingBinding = scope.symbol.exports!.get(node.id.sv);
@@ -602,7 +737,9 @@ export function createBinder(program: Program): Binder {
 function hasScope(node: Node): node is ScopeNode {
   switch (node.kind) {
     case SyntaxKind.ModelStatement:
+    case SyntaxKind.ModelExpression:
     case SyntaxKind.ScalarStatement:
+    case SyntaxKind.ConstStatement:
     case SyntaxKind.AliasStatement:
     case SyntaxKind.TypeSpecScript:
     case SyntaxKind.InterfaceStatement:
@@ -610,6 +747,7 @@ function hasScope(node: Node): node is ScopeNode {
     case SyntaxKind.UnionStatement:
     case SyntaxKind.Projection:
     case SyntaxKind.ProjectionLambdaExpression:
+    case SyntaxKind.EnumStatement:
       return true;
     case SyntaxKind.NamespaceStatement:
       return node.statements !== undefined;
@@ -623,7 +761,7 @@ export function createSymbol(
   name: string,
   flags: SymbolFlags,
   parent?: Sym,
-  value?: any
+  value?: any,
 ): Sym {
   let exports: SymbolTable | undefined;
   if (flags & SymbolFlags.ExportContainer) {
@@ -634,8 +772,14 @@ export function createSymbol(
     members = createSymbolTable();
   }
 
+  compilerAssert(
+    !(flags & SymbolFlags.Declaration) || node !== undefined,
+    "Declaration without node",
+  );
+
   return {
-    declarations: node ? [node] : [],
+    declarations: flags & SymbolFlags.Declaration ? [node!] : [],
+    node: !(flags & SymbolFlags.Declaration) ? node : (undefined as any),
     name,
     exports,
     members,
@@ -644,4 +788,13 @@ export function createSymbol(
     parent,
     metatypeMembers: createSymbolTable(),
   };
+}
+
+/**
+ * Get the node attached to this symbol.
+ * If a declaration symbol get the first one `.declarations[0]`
+ * Otherwise get `.node`
+ */
+export function getSymNode(sym: Sym): Node {
+  return sym.flags & SymbolFlags.Declaration ? sym.declarations[0] : sym.node;
 }

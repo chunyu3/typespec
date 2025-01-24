@@ -1,12 +1,13 @@
 import { createDiagnosticCreator } from "./diagnostic-creator.js";
 import { compilerAssert } from "./diagnostics.js";
-import { Program } from "./program.js";
+import type { Program } from "./program.js";
 import { createJSONSchemaValidator } from "./schema-validator.js";
 import {
   DiagnosticMessages,
   JSONSchemaValidator,
   LinterDefinition,
   LinterRuleDefinition,
+  PackageFlags,
   StateDef,
   TypeSpecLibrary,
   TypeSpecLibraryDef,
@@ -33,7 +34,7 @@ export const createCadlLibrary = createTypeSpecLibrary;
 
 function createStateKeys<T extends string>(
   libName: string,
-  state: Record<T, StateDef> | undefined
+  state: Record<T, StateDef> | undefined,
 ): Record<T, symbol> {
   const result: Record<string, symbol> = {};
 
@@ -62,9 +63,9 @@ function createStateKeys<T extends string>(
  * const lib = createTypeSpecLibrary(libDef);
  */
 export function createTypeSpecLibrary<
-  T extends { [code: string]: DiagnosticMessages },
-  E extends Record<string, any>,
-  State extends string = never,
+  const T extends { [code: string]: DiagnosticMessages },
+  const E extends Record<string, any>,
+  const State extends string = never,
 >(lib: Readonly<TypeSpecLibraryDef<T, E, State>>): TypeSpecLibrary<T, E, State> {
   let emitterOptionValidator: JSONSchemaValidator;
 
@@ -102,13 +103,17 @@ export function createTypeSpecLibrary<
   }
 }
 
+export function definePackageFlags(flags: PackageFlags): PackageFlags {
+  return flags;
+}
+
 export function defineLinter(def: LinterDefinition): LinterDefinition {
   return def;
 }
 
 /** Create a new linter rule. */
 export function createLinterRule<const N extends string, const T extends DiagnosticMessages>(
-  definition: LinterRuleDefinition<N, T>
+  definition: LinterRuleDefinition<N, T>,
 ) {
   compilerAssert(!definition.name.includes("/"), "Rule name cannot contain a '/'.");
   return definition;
@@ -137,7 +142,7 @@ function getCaller() {
 function getCallStack() {
   const _prepareStackTrace = Error.prepareStackTrace;
   Error.prepareStackTrace = (_, stack) => stack;
-  const stack = (new Error() as any).stack.slice(1); // eslint-disable-line unicorn/error-message
+  const stack = (new Error() as any).stack.slice(1);
   Error.prepareStackTrace = _prepareStackTrace;
   return stack;
 }

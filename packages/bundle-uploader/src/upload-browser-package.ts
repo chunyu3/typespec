@@ -40,7 +40,7 @@ export class TypeSpecBundledPackageUploader {
           key,
           this.#container.url + "/" + normalizePath(join(manifest.name, manifest.version, value)),
         ];
-      })
+      }),
     );
     const created = await this.#uploadManifest(manifest);
     if (!created) {
@@ -52,7 +52,20 @@ export class TypeSpecBundledPackageUploader {
     return { status: "uploaded", imports };
   }
 
-  async uploadIndex(name: string, index: PackageIndex) {
+  async getIndex(name: string, version: string): Promise<PackageIndex | undefined> {
+    const blob = this.#container.getBlockBlobClient(`indexes/${name}/${version}.json`);
+    if (await blob.exists()) {
+      const response = await blob.download();
+      const body = await response.blobBody;
+      const existingContent = await body?.text();
+      if (existingContent) {
+        const parsed = JSON.parse(existingContent);
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+  async updateIndex(name: string, index: PackageIndex) {
     const blob = this.#container.getBlockBlobClient(`indexes/${name}/${index.version}.json`);
     const content = JSON.stringify(index);
     await blob.upload(content, content.length, {
@@ -65,7 +78,7 @@ export class TypeSpecBundledPackageUploader {
   async #uploadManifest(manifest: BundleManifest) {
     try {
       const blob = this.#container.getBlockBlobClient(
-        normalizePath(join(manifest.name, manifest.version, "manifest.json"))
+        normalizePath(join(manifest.name, manifest.version, "manifest.json")),
       );
       const content = JSON.stringify(manifest);
       await blob.upload(content, content.length, {
@@ -87,10 +100,9 @@ export class TypeSpecBundledPackageUploader {
 
   async #uploadJsFile(pkgName: string, version: string, file: TypeSpecBundleFile) {
     const blob = this.#container.getBlockBlobClient(
-      normalizePath(join(pkgName, version, file.filename))
+      normalizePath(join(pkgName, version, file.filename)),
     );
-    const content = file.content;
-    await blob.upload(content, content.length, {
+    await blob.uploadData(Buffer.from(file.content), {
       blobHTTPHeaders: {
         blobContentType: "application/javascript; charset=utf-8",
       },
@@ -103,11 +115,11 @@ export class TypeSpecBundledPackageUploader {
 
 function getCoverageContainer(
   storageAccountName: string,
-  credential?: StorageSharedKeyCredential | AnonymousCredential | TokenCredential
+  credential?: StorageSharedKeyCredential | AnonymousCredential | TokenCredential,
 ): ContainerClient {
   const blobSvc = new BlobServiceClient(
     `https://${storageAccountName}.blob.core.windows.net`,
-    credential
+    credential,
   );
   const containerClient = blobSvc.getContainerClient(pkgsContainer);
   return containerClient;

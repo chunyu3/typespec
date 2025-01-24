@@ -7,6 +7,8 @@ import {
   DocContent,
   DocUnknownTagNode,
   Enum,
+  EnumMember,
+  getDeprecated,
   getDoc,
   getLocationContext,
   getSourceLocation,
@@ -16,7 +18,7 @@ import {
   isTemplateDeclaration,
   joinPaths,
   JSONSchemaType,
-  LinterDefinition,
+  LinterResolvedDefinition,
   LinterRuleDefinition,
   LinterRuleSet,
   Model,
@@ -25,10 +27,10 @@ import {
   navigateProgram,
   navigateTypesInNamespace,
   NodeHost,
-  NodePackage,
   NoTarget,
   Operation,
   Program,
+  resolveLinterDefinition,
   resolvePath,
   Scalar,
   SyntaxKind,
@@ -36,13 +38,16 @@ import {
   Type,
   TypeSpecLibrary,
   Union,
+  type PackageJson,
 } from "@typespec/compiler";
 import { readFile } from "fs/promises";
 import { pathToFileURL } from "url";
 import { reportDiagnostic } from "./lib.js";
 import {
   DecoratorRefDoc,
+  DeprecationNotice,
   EmitterOptionRefDoc,
+  EnumMemberRefDoc,
   EnumRefDoc,
   ExampleRefDoc,
   FunctionParameterRefDoc,
@@ -55,6 +60,7 @@ import {
   NamespaceRefDoc,
   OperationRefDoc,
   RefDocEntity,
+  ReferencableElement,
   ScalarRefDoc,
   TypeSpecLibraryRefDoc,
   TypeSpecRefDocBase,
@@ -75,7 +81,7 @@ type Mutable<T> =
   { -readonly [P in keyof T]: T[P]};
 
 export async function extractLibraryRefDocs(
-  libraryPath: string
+  libraryPath: string,
 ): Promise<[TypeSpecLibraryRefDoc, readonly Diagnostic[]]> {
   const diagnostics = createDiagnosticCollector();
   const pkgJson = await readPackageJson(libraryPath);
@@ -106,17 +112,17 @@ export async function extractLibraryRefDocs(
         options: extractEmitterOptionsRefDoc(lib.emitter.options),
       };
     }
-    // eslint-disable-next-line deprecation/deprecation
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     const linter = entrypoint.$linter ?? lib?.linter;
     if (lib && linter) {
-      refDoc.linter = extractLinterRefDoc(lib.name, linter);
+      refDoc.linter = extractLinterRefDoc(lib.name, resolveLinterDefinition(lib.name, linter));
     }
   }
 
   return diagnostics.wrap(refDoc);
 }
 
-async function readPackageJson(libraryPath: string): Promise<NodePackage> {
+async function readPackageJson(libraryPath: string): Promise<PackageJson> {
   const buffer = await readFile(joinPaths(libraryPath, "package.json"));
   return JSON.parse(buffer.toString());
 }
@@ -130,7 +136,7 @@ export interface ExtractRefDocOptions {
 
 function resolveNamespaces(
   program: Program,
-  options: ExtractRefDocOptions
+  options: ExtractRefDocOptions,
 ): [Namespace[], readonly Diagnostic[]] {
   const diagnostics = createDiagnosticCollector();
   let namespaceTypes: Namespace[] = [];
@@ -163,7 +169,7 @@ function resolveNamespaces(
 
 export function extractRefDocs(
   program: Program,
-  options: ExtractRefDocOptions = {}
+  options: ExtractRefDocOptions = {},
 ): [TypeSpecRefDocBase, readonly Diagnostic[]] {
   const diagnostics = createDiagnosticCollector();
   const namespaceTypes = diagnostics.pipe(resolveNamespaces(program, options));
@@ -205,7 +211,7 @@ export function extractRefDocs(
             collectType(
               operation,
               extractOperationRefDoc(program, operation, undefined),
-              namespaceDoc.operations
+              namespaceDoc.operations,
             );
           }
         },
@@ -242,7 +248,7 @@ export function extractRefDocs(
           collectType(scalar, extractScalarRefDocs(program, scalar), namespaceDoc.scalars);
         },
       },
-      { includeTemplateDeclaration: true, skipSubNamespaces: true }
+      { includeTemplateDeclaration: true, skipSubNamespaces: true },
     );
   }
 
@@ -302,23 +308,35 @@ function extractInterfaceRefDocs(program: Program, iface: Interface): InterfaceR
   }
   return {
     kind: "interface",
-    id: getNamedTypeId(iface),
-    name: iface.name,
+    ...extractBase(program, iface),
     signature: getTypeSignature(iface),
     type: iface,
     templateParameters: extractTemplateParameterDocs(program, iface),
     interfaceOperations: [...iface.operations.values()].map((x) =>
-      extractOperationRefDoc(program, x, iface.name)
+      extractOperationRefDoc(program, x, iface.name),
     ),
     doc: doc,
     examples: extractExamples(iface),
   };
 }
 
+function extractBase(
+  program: Program,
+  type: Type & { name: string },
+): ReferencableElement & { readonly deprecated?: DeprecationNotice } {
+  const deprecated = getDeprecated(program, type);
+
+  return {
+    id: getNamedTypeId(type),
+    name: type.name,
+    deprecated: deprecated ? { message: deprecated } : undefined,
+  };
+}
+
 function extractOperationRefDoc(
   program: Program,
   operation: Operation,
-  interfaceName: string | undefined
+  interfaceName: string | undefined,
 ): OperationRefDoc {
   const doc = extractMainDoc(program, operation);
   if (doc === undefined || doc === "") {
@@ -326,7 +344,7 @@ function extractOperationRefDoc(
       reportDiagnostic(program, {
         code: "documentation-missing",
         messageId: "interfaceOperation",
-        format: { name: `${operation.interface.name}.${operation.name}` ?? "" },
+        format: { name: `${operation.interface.name}.${operation.name}` },
         target: NoTarget,
       });
     } else {
@@ -340,7 +358,7 @@ function extractOperationRefDoc(
   }
   return {
     kind: "operation",
-    id: getNamedTypeId(operation),
+    ...extractBase(program, operation),
     name: interfaceName ? `${interfaceName}.${operation.name}` : operation.name,
     signature: getTypeSignature(operation),
     type: operation,
@@ -384,8 +402,7 @@ function extractDecoratorRefDoc(program: Program, decorator: Decorator): Decorat
   }
   return {
     kind: "decorator",
-    id: getNamedTypeId(decorator),
-    name: decorator.name,
+    ...extractBase(program, decorator),
     type: decorator,
     signature: getTypeSignature(decorator),
     doc: mainDoc,
@@ -414,15 +431,14 @@ function extractModelRefDocs(program: Program, type: Model): ModelRefDoc {
   }
   return {
     kind: "model",
-    id: getNamedTypeId(type),
-    name: type.name,
+    ...extractBase(program, type),
     signature: getTypeSignature(type),
     type,
     templateParameters: extractTemplateParameterDocs(program, type),
     doc: doc,
     examples: extractExamples(type),
     properties: new Map(
-      [...type.properties.values()].map((x) => [x.name, extractModelPropertyRefDocs(program, x)])
+      [...type.properties.values()].map((x) => [x.name, extractModelPropertyRefDocs(program, x)]),
     ),
   };
 }
@@ -430,8 +446,7 @@ function extractModelRefDocs(program: Program, type: Model): ModelRefDoc {
 function extractModelPropertyRefDocs(program: Program, type: ModelProperty): ModelPropertyRefDoc {
   const doc = extractMainDoc(program, type);
   return {
-    id: getNamedTypeId(type),
-    name: type.name,
+    ...extractBase(program, type),
     signature: getTypeSignature(type),
     type,
     doc: doc,
@@ -451,14 +466,28 @@ function extractEnumRefDoc(program: Program, type: Enum): EnumRefDoc {
   }
   return {
     kind: "enum",
-    id: getNamedTypeId(type),
-    name: type.name,
+    ...extractBase(program, type),
+    signature: getTypeSignature(type),
+    type,
+    doc: doc,
+    examples: extractExamples(type),
+    members: new Map(
+      [...type.members.values()].map((x) => [x.name, extractEnumMemberRefDocs(program, x)]),
+    ),
+  };
+}
+
+function extractEnumMemberRefDocs(program: Program, type: EnumMember): EnumMemberRefDoc {
+  const doc = extractMainDoc(program, type);
+  return {
+    ...extractBase(program, type),
     signature: getTypeSignature(type),
     type,
     doc: doc,
     examples: extractExamples(type),
   };
 }
+
 function extractUnionRefDocs(program: Program, type: Union & { name: string }): UnionRefDoc {
   const doc = extractMainDoc(program, type);
   if (doc === undefined || doc === "") {
@@ -471,8 +500,7 @@ function extractUnionRefDocs(program: Program, type: Union & { name: string }): 
   }
   return {
     kind: "union",
-    id: getNamedTypeId(type),
-    name: type.name,
+    ...extractBase(program, type),
     signature: getTypeSignature(type),
     type,
     templateParameters: extractTemplateParameterDocs(program, type),
@@ -493,8 +521,7 @@ function extractScalarRefDocs(program: Program, type: Scalar): ScalarRefDoc {
   }
   return {
     kind: "scalar",
-    id: getNamedTypeId(type),
-    name: type.name,
+    ...extractBase(program, type),
     signature: getTypeSignature(type),
     type,
     doc: doc,
@@ -509,7 +536,7 @@ function extractMainDoc(program: Program, type: Type): string {
       mainDocs.push(dContent.text);
     }
   }
-  return mainDocs.length > 0 ? mainDocs.join("\n") : getDoc(program, type) ?? "";
+  return mainDocs.length > 0 ? mainDocs.join("\n") : (getDoc(program, type) ?? "");
 }
 
 function extractExamples(type: Type): ExampleRefDoc[] {
@@ -601,7 +628,7 @@ function getDocContent(content: readonly DocContent[]) {
   for (const node of content) {
     compilerAssert(
       node.kind === SyntaxKind.DocText,
-      "No other doc content node kinds exist yet. Update this code appropriately when more are added."
+      "No other doc content node kinds exist yet. Update this code appropriately when more are added.",
     );
     docs.push(node.text);
   }
@@ -609,7 +636,7 @@ function getDocContent(content: readonly DocContent[]) {
 }
 
 function extractEmitterOptionsRefDoc(
-  options: JSONSchemaType<Record<string, never>>
+  options: JSONSchemaType<Record<string, never>>,
 ): EmitterOptionRefDoc[] {
   return Object.entries(options.properties).map(([name, value]: [string, any]) => {
     return {
@@ -622,7 +649,7 @@ function extractEmitterOptionsRefDoc(
   });
 }
 
-function extractLinterRefDoc(libName: string, linter: LinterDefinition): LinterRefDoc {
+function extractLinterRefDoc(libName: string, linter: LinterResolvedDefinition): LinterRefDoc {
   return {
     ruleSets: linter.ruleSets && extractLinterRuleSetsRefDoc(libName, linter.ruleSets),
     rules: linter.rules.map((rule) => extractLinterRuleRefDoc(libName, rule)),
@@ -631,7 +658,7 @@ function extractLinterRefDoc(libName: string, linter: LinterDefinition): LinterR
 
 function extractLinterRuleSetsRefDoc(
   libName: string,
-  ruleSets: Record<string, LinterRuleSet>
+  ruleSets: Record<string, LinterRuleSet>,
 ): LinterRuleSetRefDoc[] {
   return Object.entries(ruleSets).map(([name, ruleSet]) => {
     const fullName = `${libName}/${name}`;
@@ -645,7 +672,7 @@ function extractLinterRuleSetsRefDoc(
 }
 function extractLinterRuleRefDoc(
   libName: string,
-  rule: LinterRuleDefinition<any, any>
+  rule: LinterRuleDefinition<any, any>,
 ): LinterRuleRefDoc {
   const fullName = `${libName}/${rule.name}`;
   return {

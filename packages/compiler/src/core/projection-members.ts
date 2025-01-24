@@ -1,7 +1,7 @@
 import { camelCase, kebabCase, pascalCase, snakeCase } from "change-case";
-import { Checker } from "./checker.js";
+import type { Checker } from "./checker.js";
 import { ProjectionError, assertType } from "./diagnostics.js";
-import { ObjectType, Type, UnionVariant } from "./types.js";
+import type { ObjectType, Type, UnionVariant } from "./types.js";
 
 export function createProjectionMembers(checker: Checker): {
   [TKind in Type["kind"]]?: Record<string, (base: Type & { kind: TKind }) => Type>;
@@ -96,7 +96,7 @@ export function createProjectionMembers(checker: Checker): {
               node: undefined!,
               default: defaultT,
               type,
-            })
+            }),
           );
 
           return voidType;
@@ -285,7 +285,7 @@ export function createProjectionMembers(checker: Checker): {
               parameters,
               returnType,
               decorators: [],
-            })
+            }),
           );
           return voidType;
         });
@@ -348,7 +348,7 @@ export function createProjectionMembers(checker: Checker): {
               decorators: [],
               node: undefined!,
               value: type ? type.value : undefined,
-            })
+            }),
           );
 
           return voidType;

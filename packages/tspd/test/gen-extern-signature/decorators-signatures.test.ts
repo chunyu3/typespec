@@ -1,3 +1,4 @@
+import { definePackageFlags } from "@typespec/compiler";
 import { createTestHost, expectDiagnosticEmpty } from "@typespec/compiler/testing";
 import { describe, expect, it } from "vitest";
 import { generateExternDecorators } from "../../src/gen-extern-signatures/gen-extern-signatures.js";
@@ -7,20 +8,26 @@ async function generateDecoratorSignatures(code: string) {
   host.addTypeSpecFile(
     "main.tsp",
     `
+    import "./lib.js";
     using TypeSpec.Reflection;
-    ${code}`
+    ${code}`,
   );
+  host.addJsFile("lib.js", {
+    $flags: definePackageFlags({}),
+  });
   await host.diagnose("main.tsp", {
     parseOptions: { comments: true, docs: true },
   });
 
   expectDiagnosticEmpty(
-    host.program.diagnostics.filter((x) => x.code !== "missing-implementation")
+    host.program.diagnostics.filter((x) => x.code !== "missing-implementation"),
   );
 
   const result = await generateExternDecorators(host.program, "test-lib", {
-    printWidth: 160, // So there is no inconsistency in the .each test with different parameter length
-    plugins: [],
+    prettierConfig: {
+      printWidth: 160, // So there is no inconsistency in the .each test with different parameter length
+      plugins: [],
+    },
   });
 
   return result["__global__.ts"];
@@ -38,6 +45,10 @@ it("generate simple decorator with no parameters", async () => {
 ${importLine(["Type"])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: Type) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
   `,
   });
 });
@@ -62,6 +73,10 @@ describe("generate target type", () => {
 ${importLine([expected])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: ${expected}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -78,6 +93,10 @@ export type SimpleDecorator = (context: DecoratorContext, target: ${expected}) =
 ${importLine([...expected])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: ${expected.join(" | ")}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -95,6 +114,10 @@ export type SimpleDecorator = (context: DecoratorContext, target: ${expected.joi
 ${importLine([expected])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: ${expected}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -121,6 +144,10 @@ describe("generate parameter type", () => {
 ${importLine(["Type", expected])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${expected}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -137,6 +164,10 @@ export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${
 ${importLine(["Type", ...expected])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${expected.join(" | ")}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -148,20 +179,54 @@ export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${
       ["valueof boolean", "boolean"],
       ["valueof int32", "number"],
       ["valueof int8", "number"],
-      ["valueof uint64", "number"],
-      ["valueof int64", "number"],
+      ["valueof uint64", "Numeric"],
+      ["valueof int64", "Numeric"],
       [`valueof "abc"`, `"abc"`],
       [`valueof 123`, `123`],
       [`valueof true`, `true`],
       [`valueof "abc" | "def"`, `"abc" | "def"`],
       [`valueof "abc" | "def" | string`, `"abc" | "def" | string`],
+      [`valueof string[]`, `readonly string[]`],
+      [`valueof ("abc" | "def")[]`, `readonly ("abc" | "def")[]`],
+      [`valueof Record<int32>`, `Record<string, number>`],
+      [
+        `valueof {...Record<int32>, other: string}`,
+        `{ readonly [key: string]: number; readonly other: string }`,
+      ],
+      [`valueof {name: string, age?: int32}`, `{ readonly name: string; readonly age?: number }`],
     ])("%s => %s", async (ref, expected) => {
       await expectSignatures({
         code: `extern dec simple(target, arg1: ${ref});`,
         expected: `
-${importLine(["Type"])}
+${importLine(["Type", ...(expected === "Numeric" ? ["Numeric"] : [])])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${expected}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
+    `,
+      });
+    });
+
+    it("generate local model as interface", async () => {
+      await expectSignatures({
+        code: `
+          model Info { name: string, age?: int32} 
+          extern dec simple(target, arg1: valueof Info);`,
+        expected: `
+${importLine(["Type"])}
+
+export interface Info {
+  readonly name: string;
+  readonly age?: number;
+}
+
+export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: Info) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -178,6 +243,10 @@ export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${
 ${importLine(["Type", expected])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: ${expected}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -197,6 +266,10 @@ ${importLine(["Type", "Model"])}
  * Some doc comment
  */
 export type SimpleDecorator = (context: DecoratorContext, target: Type, ...args: Model[]) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
   `,
     });
   });
@@ -207,8 +280,8 @@ export type SimpleDecorator = (context: DecoratorContext, target: Type, ...args:
       ["valueof boolean[]", "boolean[]"],
       ["valueof int32[]", "number[]"],
       ["valueof int8[]", "number[]"],
-      ["valueof uint64[]", "number[]"],
-      ["valueof int64[]", "number[]"],
+      ["valueof uint64[]", "Numeric[]"],
+      ["valueof int64[]", "Numeric[]"],
       [`valueof "abc"[]`, `"abc"[]`],
       [`valueof 123[]`, `123[]`],
       [`valueof true[]`, `true[]`],
@@ -218,9 +291,13 @@ export type SimpleDecorator = (context: DecoratorContext, target: Type, ...args:
       await expectSignatures({
         code: `extern dec simple(target, ...args: ${ref});`,
         expected: `
-${importLine(["Type"])}
+${importLine(["Type", ...(expected === "Numeric[]" ? ["Numeric"] : [])])}
 
 export type SimpleDecorator = (context: DecoratorContext, target: Type, ...args: ${expected}) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
     `,
       });
     });
@@ -240,6 +317,10 @@ ${importLine(["Type"])}
  * Some doc comment
  */
 export type SimpleDecorator = (context: DecoratorContext, target: Type) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
   `,
     });
   });
@@ -264,6 +345,10 @@ ${importLine(["Type"])}
  * @param arg2 This is the second argument
  */
 export type SimpleDecorator = (context: DecoratorContext, target: Type, arg1: Type, arg2: Type) => void;
+
+export type Decorators = {
+  simple: SimpleDecorator;
+};
   `,
     });
   });

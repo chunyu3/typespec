@@ -1,5 +1,75 @@
 # Change Log - @typespec/openapi
 
+## 0.64.0
+
+No changes, version bump only.
+
+## 0.63.0
+
+No changes, version bump only.
+
+## 0.62.0
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+### Features
+
+- [#4834](https://github.com/microsoft/typespec/pull/4834) Add new `@tagMetadata` decorator to specify OpenAPI tag properties
+
+
+## 0.61.0
+
+### Bug Fixes
+
+- [#4505](https://github.com/microsoft/typespec/pull/4505) `@info` decorator validate no extra properties not starting with `x-` are provided.
+- [#4483](https://github.com/microsoft/typespec/pull/4483) `@info` decorator validate `termsOfService` is a valid url
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+
+## 0.60.0
+
+### Features
+
+- [#4139](https://github.com/microsoft/typespec/pull/4139) Internals: Migrate to new api for declaring decorator implementation
+
+
+## 0.59.0
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+
+## 0.58.0
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+### Features
+
+- [#3626](https://github.com/microsoft/typespec/pull/3626) Adds public function for setting info object
+
+
+## 0.57.0
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+
+## 0.56.0
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+
 ## 0.55.0
 
 ### Bump dependencies

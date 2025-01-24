@@ -9,12 +9,10 @@ import {
   Model,
   ModelProperty,
   Namespace,
-  NumericLiteral,
   Operation,
   Program,
   resolvePath,
   StringLiteral,
-  Tuple,
   Type,
 } from "@typespec/compiler";
 
@@ -25,6 +23,7 @@ import {
   ReserveDecorator,
   StreamDecorator,
 } from "../generated-defs/TypeSpec.Protobuf.js";
+import { ExternRefDecorator } from "../generated-defs/TypeSpec.Protobuf.Private.js";
 import { StreamingMode } from "./ast.js";
 import { ProtobufEmitterOptions, reportDiagnostic, state, TypeSpecProtobufLibrary } from "./lib.js";
 import { createProtobufEmitter } from "./transform/index.js";
@@ -76,7 +75,7 @@ export interface PackageDetails {
 export const $package: PackageDecorator = (
   ctx: DecoratorContext,
   target: Namespace,
-  details?: Type
+  details?: Type,
 ) => {
   ctx.program.stateMap(state.package).set(target, details);
 };
@@ -102,14 +101,16 @@ export function $_map(ctx: DecoratorContext, target: Model) {
   ctx.program.stateSet(state._map).add(target);
 }
 
-export function $externRef(
+export const $externRef: ExternRefDecorator = (
   ctx: DecoratorContext,
   target: Model,
-  path: StringLiteral,
-  name: StringLiteral
-) {
-  ctx.program.stateMap(state.externRef).set(target, [path.value, name.value]);
-}
+  path: Type,
+  name: Type,
+) => {
+  ctx.program
+    .stateMap(state.externRef)
+    .set(target, [(path as StringLiteral).value, (name as StringLiteral).value]);
+};
 
 export const $stream: StreamDecorator = (ctx: DecoratorContext, target: Operation, mode: Type) => {
   const emitStreamingMode = {
@@ -122,22 +123,6 @@ export const $stream: StreamDecorator = (ctx: DecoratorContext, target: Operatio
   ctx.program.stateMap(state.stream).set(target, emitStreamingMode);
 };
 
-function getTuple(program: Program, t: Type): [number, number] | null {
-  if (t.kind !== "Tuple" || t.values.some((v) => v.kind !== "Number") || t.values.length !== 2) {
-    reportDiagnostic(program, {
-      code: "illegal-reservation",
-      target: t,
-    });
-
-    return null;
-  }
-
-  return Object.assign(
-    (t as Tuple).values.map((v) => (v as NumericLiteral).value) as [number, number],
-    { type: t }
-  );
-}
-
 export type Reservation = string | number | ([number, number] & { type: Type });
 
 export const $reserve: ReserveDecorator = (
@@ -145,12 +130,7 @@ export const $reserve: ReserveDecorator = (
   target: Type,
   ...reservations: readonly (unknown | number | string)[]
 ) => {
-  const finalReservations = reservations
-    .map((reservation) =>
-      typeof reservation === "object" ? getTuple(ctx.program, reservation as Type) : reservation
-    )
-    .filter((v) => v != null);
-
+  const finalReservations = reservations.filter((v) => v != null);
   ctx.program.stateMap(state.reserve).set(target, finalReservations);
 };
 
@@ -169,7 +149,7 @@ export const $message: MessageDecorator = (ctx: DecoratorContext, target: Type) 
 export const $field: FieldDecorator = (
   ctx: DecoratorContext,
   target: ModelProperty,
-  fieldIndex: number
+  fieldIndex: number,
 ) => {
   if (!Number.isInteger(fieldIndex) || fieldIndex <= 0) {
     reportDiagnostic(ctx.program, {

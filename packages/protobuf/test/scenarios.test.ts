@@ -83,7 +83,7 @@ describe("protobuf scenarios", function () {
             assert.strictEqual(
               Object.entries(emitResult.files).length,
               0,
-              "no expectations exist, but output files were generated"
+              "no expectations exist, but output files were generated",
             );
           } else {
             const expectedFiles = await readdirRecursive(expectationDirectory);
@@ -107,7 +107,7 @@ describe("protobuf scenarios", function () {
           // Fix the start of lines on Windows
           const processedDiagnostics =
             process.platform === "win32"
-              ? emitResult.diagnostics.map((d) => d.replace(/^Z:/, ""))
+              ? emitResult.diagnostics.map((d) => d.replaceAll(/^(\s*)Z:/gm, "$1"))
               : emitResult.diagnostics;
 
           const diagnostics = removeCoreDiagnostics(processedDiagnostics).join("\n") + "\n";
@@ -142,7 +142,7 @@ interface EmitResult {
 
 async function doEmit(
   files: Record<string, string>,
-  options: ProtobufEmitterOptions
+  options: ProtobufEmitterOptions,
 ): Promise<EmitResult> {
   const baseOutputPath = resolveVirtualPath("test-output/");
 
@@ -166,20 +166,20 @@ async function doEmit(
     files: Object.fromEntries(
       [...host.fs.entries()]
         .filter(([name]) => name.startsWith(baseOutputPath))
-        .map(([name, value]) => [name.replace(baseOutputPath, ""), value])
+        .map(([name, value]) => [name.replace(baseOutputPath, ""), value]),
     ),
-    diagnostics: diagnostics.map(formatDiagnostic),
+    diagnostics: diagnostics.map((x) => formatDiagnostic(x)),
   };
 }
 
 function assertFilesAsExpected(
   outputFiles: Record<string, string>,
-  expectedFiles: Record<string, string>
+  expectedFiles: Record<string, string>,
 ) {
   for (const fn of Object.keys(expectedFiles)) {
     assert.ok(
       Object.prototype.hasOwnProperty.call(outputFiles, fn),
-      `expected file ${fn} was not produced`
+      `expected file ${fn} was not produced`,
     );
   }
 
@@ -200,7 +200,7 @@ function assertFilesAsExpected(
  */
 async function writeExpectationDirectory(
   expectationDirectory: string,
-  outputFiles: Record<string, string>
+  outputFiles: Record<string, string>,
 ) {
   const fileEntries = Object.entries(outputFiles);
 

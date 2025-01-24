@@ -1,15 +1,15 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { deepStrictEqual, ok, strictEqual } from "assert";
 import { describe, expect, it } from "vitest";
-import { diagnoseOpenApiFor, oapiForModel, openApiFor } from "./test-host.js";
+import { worksFor } from "./works-for.js";
 
-describe("openapi3: models", () => {
+worksFor(["3.0.0", "3.1.0"], ({ diagnoseOpenApiFor, oapiForModel, openApiFor }) => {
   it("defines models", async () => {
     const res = await oapiForModel(
       "Foo",
       `model Foo {
         x: int32;
-      };`
+      };`,
     );
 
     ok(res.isRef);
@@ -29,7 +29,7 @@ describe("openapi3: models", () => {
         #suppress "deprecated" "for testing"
         @projectedName("json", "xJson")
         x: int32;
-      };`
+      };`,
     );
 
     expect(res.schemas.Foo).toMatchObject({
@@ -46,7 +46,7 @@ describe("openapi3: models", () => {
       `model Foo {
         @encodedName("application/json", "xJson")
         x: int32;
-      };`
+      };`,
     );
 
     expect(res.schemas.Foo).toMatchObject({
@@ -65,7 +65,7 @@ describe("openapi3: models", () => {
         @encodedName("application/json", "xJson")
         @projectedName("json", "projectedJson")
         x: int32;
-      };`
+      };`,
     );
 
     expect(res.schemas.Foo).toMatchObject({
@@ -91,7 +91,7 @@ describe("openapi3: models", () => {
       @route("/test1")
       @get
       op test1(p: P): Q;
-      `
+      `,
     );
 
     expectDiagnostics(diagnostics, [
@@ -100,6 +100,60 @@ describe("openapi3: models", () => {
         message: /type/,
       },
     ]);
+  });
+
+  describe("errors on invalid model names", () => {
+    const symbols = [
+      "!",
+      "@",
+      "#",
+      "$",
+      "%",
+      "^",
+      "&",
+      "*",
+      "(",
+      ")",
+      "=",
+      "+",
+      "[",
+      "]",
+      "{",
+      "}",
+      "|",
+      ";",
+      ":",
+      "<",
+      ">",
+      ",",
+      "/",
+      "?",
+      "~",
+    ];
+    it.each(symbols)("%sName01", async (model) => {
+      const diagnostics = await diagnoseOpenApiFor(
+        `
+        model \`${model}Name01\` { name: string; }
+       `,
+      );
+      expectDiagnostics(diagnostics, [
+        {
+          code: "@typespec/openapi3/invalid-component-fixed-field-key",
+        },
+      ]);
+    });
+  });
+
+  describe("no errors on valid model names", () => {
+    const symbols = [".", "-", "_"];
+    it.each(symbols)("%sName01", async (model) => {
+      const diagnostics = await diagnoseOpenApiFor(
+        `
+        model \`${model}Name01\` { name: string; }
+       `,
+      );
+      expectDiagnostics(diagnostics, []);
+    });
   });
 
   it("doesn't define anonymous models", async () => {
@@ -121,7 +175,7 @@ describe("openapi3: models", () => {
       "Foo<int32>",
       `model Foo<T> {
         x: T;
-      };`
+      };`,
     );
 
     ok(!res.isRef);
@@ -143,7 +197,7 @@ describe("openapi3: models", () => {
       }
       model Foo<T> {
         x: T;
-      };`
+      };`,
     );
 
     ok(!res.isRef);
@@ -163,7 +217,7 @@ describe("openapi3: models", () => {
       model Foo {
         y: int32;
       };
-      model Bar extends Foo {}`
+      model Bar extends Foo {}`,
     );
 
     ok(res.isRef);
@@ -193,7 +247,7 @@ describe("openapi3: models", () => {
         a: "a-value",
         b,
       }
-      `
+      `,
     );
 
     ok(res.isRef);
@@ -222,7 +276,7 @@ describe("openapi3: models", () => {
         a: "a-value",
         b: "b-value",
       }
-      `
+      `,
     );
 
     deepStrictEqual(res.schemas.Foo, {
@@ -236,26 +290,55 @@ describe("openapi3: models", () => {
     });
   });
 
-  it("specify default value on nullable property", async () => {
+  it("scalar used as a default value", async () => {
     const res = await oapiForModel(
-      "Foo",
+      "Pet",
       `
-      model Foo {
-        optional?: string | null = null;
-      };
-      `
+        scalar shortName { init name(value: string);}
+
+        model Pet { name: shortName = shortName.name("Shorty"); }
+      `,
     );
 
-    ok(res.schemas.Foo, "expected definition named Foo");
-    deepStrictEqual(res.schemas.Foo, {
-      type: "object",
-      properties: {
-        optional: {
-          type: "string",
-          nullable: true,
-          default: null,
-        },
-      },
+    expect(res.schemas.Pet.properties.name.default).toEqual("Shorty");
+  });
+
+  it("encode know scalar as a default value", async () => {
+    const res = await oapiForModel(
+      "Test",
+      `
+        model Test { @encode("rfc7231") minDate: utcDateTime = utcDateTime.fromISO("2024-01-01T11:32:00Z"); }
+      `,
+    );
+
+    expect(res.schemas.Test.properties.minDate.default).toEqual("Mon, 01 Jan 2024 11:32:00 GMT");
+  });
+
+  it("object value used as a default value", async () => {
+    const res = await oapiForModel(
+      "Test",
+      `
+        model Test { Pet: {name: string;} = #{ name: "Dog"}; }
+      `,
+    );
+
+    expect(res.schemas.Test.properties.Pet.default.name).toEqual("Dog");
+  });
+
+  describe("numeric defaults", () => {
+    it.each([
+      ["0.01", 0.01],
+      ["1e-2", 0.01],
+    ])("%s => %s", async (value, expected) => {
+      const res = await openApiFor(
+        `
+      model Foo {
+        opt?: float = ${value};
+      };
+      `,
+      );
+
+      expect(res.components.schemas.Foo.properties.opt.default).toEqual(expected);
     });
   });
 
@@ -269,7 +352,7 @@ describe("openapi3: models", () => {
         y?: int32;
       }
       @route("/") op test(): Parent;
-      `
+      `,
     );
     deepStrictEqual(res.components.schemas.Parent, {
       type: "object",
@@ -296,11 +379,11 @@ describe("openapi3: models", () => {
         y?: int32;
       }
       @route("/") op test(): Parent;
-      `
+      `,
     );
     ok(
       !("TParent" in res.components.schemas),
-      "Parent templated type shouldn't be included in OpenAPI"
+      "Parent templated type shouldn't be included in OpenAPI",
     );
     deepStrictEqual(res.components.schemas.Parent, {
       type: "object",
@@ -332,11 +415,11 @@ describe("openapi3: models", () => {
         y?: int32;
       }
       @route("/") op test(): Parent;
-      `
+      `,
     );
     ok(
       !("TParent_string" in res.components.schemas),
-      "Parent instantiated templated type shouldn't be included in OpenAPI"
+      "Parent instantiated templated type shouldn't be included in OpenAPI",
     );
   });
 
@@ -349,7 +432,7 @@ describe("openapi3: models", () => {
       };
       model Bar extends Foo {
         x: int32;
-      }`
+      }`,
     );
 
     ok(res.isRef);
@@ -376,7 +459,7 @@ describe("openapi3: models", () => {
       model Foo<T> {
         y: T;
       };
-      model Bar extends Foo<int32> {}`
+      model Bar extends Foo<int32> {}`,
     );
 
     ok(res.isRef);
@@ -404,7 +487,7 @@ describe("openapi3: models", () => {
       };
       model Bar extends Foo<int32> {
         x: int32
-      }`
+      }`,
     );
 
     ok(res.isRef);
@@ -433,7 +516,7 @@ describe("openapi3: models", () => {
       };
       model Bar<T> extends Foo<T> {
         x: T
-      }`
+      }`,
     );
 
     ok(!res.isRef);
@@ -460,7 +543,7 @@ describe("openapi3: models", () => {
       "Bar",
       `
       model Foo {};
-      model Bar extends Foo {};`
+      model Bar extends Foo {};`,
     );
 
     ok(res.isRef);
@@ -482,7 +565,7 @@ describe("openapi3: models", () => {
       `
       model Foo { x: int32 };
       model Bar extends Foo {};
-      model Baz extends Bar {};`
+      model Baz extends Bar {};`,
     );
 
     ok(res.isRef);
@@ -519,7 +602,7 @@ describe("openapi3: models", () => {
         Dog, Cat
       }
       model Pet { type: PetType };
-      `
+      `,
     );
     ok(res.isRef);
     strictEqual(res.schemas.Pet.properties.type.$ref, "#/components/schemas/PetType");
@@ -534,7 +617,7 @@ describe("openapi3: models", () => {
         Dog: 0, Cat: 1
       }
       model Pet { type: PetType };
-      `
+      `,
     );
     ok(res.isRef);
     strictEqual(res.schemas.Pet.properties.type.$ref, "#/components/schemas/PetType");
@@ -553,60 +636,12 @@ describe("openapi3: models", () => {
       @knownValues(KnownPetType)
       scalar PetType extends string;
       model Pet { type: PetType };
-      `
+      `,
     );
     ok(res.isRef);
     strictEqual(res.schemas.Pet.properties.type.$ref, "#/components/schemas/PetType");
     deepStrictEqual(res.schemas.PetType, {
       oneOf: [{ type: "string" }, { type: "string", enum: ["Dog", "Cat"] }],
-    });
-  });
-
-  it("defines nullable properties", async () => {
-    const res = await oapiForModel(
-      "Pet",
-      `
-      model Pet {
-        name: string | null;
-      };
-      `
-    );
-    ok(res.isRef);
-    deepStrictEqual(res.schemas.Pet, {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          nullable: true,
-        },
-      },
-      required: ["name"],
-    });
-  });
-
-  it("defines nullable array", async () => {
-    const res = await oapiForModel(
-      "Pet",
-      `
-      model Pet {
-        name: int32[] | null;
-      };
-      `
-    );
-    ok(res.isRef);
-    deepStrictEqual(res.schemas.Pet, {
-      type: "object",
-      properties: {
-        name: {
-          type: "array",
-          items: {
-            type: "integer",
-            format: "int32",
-          },
-          nullable: true,
-        },
-      },
-      required: ["name"],
     });
   });
 
@@ -805,7 +840,7 @@ describe("openapi3: models", () => {
       @route("/things/{id}")
       @get
       op get(@path id: string, @query test: string, ...Input): Output & { @header test: string; };
-      `
+      `,
     );
 
     deepStrictEqual(oapi.components.schemas.Input, {
@@ -834,7 +869,7 @@ describe("openapi3: models", () => {
       oapi.paths["/things/{id}"].get.responses["200"].content["application/json"].schema,
       {
         $ref: "#/components/schemas/Output",
-      }
+      },
     );
   });
 
@@ -844,7 +879,7 @@ describe("openapi3: models", () => {
       model Thing<T> { inner?: Thing<T>; }
       op get(): Thing<string>;
       `,
-      { "omit-unreachable-types": true }
+      { "omit-unreachable-types": true },
     );
 
     expectDiagnostics(diagnostics, [{ code: "@typespec/openapi3/inline-cycle" }]);
@@ -860,7 +895,7 @@ describe("openapi3: models", () => {
       };
       model Bar extends Foo {
         x: int32;
-      }`
+      }`,
     );
 
     ok(res.isRef);
@@ -889,7 +924,7 @@ describe("openapi3: models", () => {
         @summary("YProp")
         y: int32;
       };
-      `
+      `,
     );
     strictEqual(res.schemas.Foo.title, "FooModel");
     strictEqual(res.schemas.Foo.properties.y.title, "YProp");
@@ -905,7 +940,7 @@ describe("openapi3: models", () => {
         }
         model Bar {
           x: Foo.name
-        }`
+        }`,
       );
 
       ok(res.schemas.Bar, "expected definition named Bar");
@@ -924,7 +959,7 @@ describe("openapi3: models", () => {
         }
         model Bar {
           x: Foo.name
-        }`
+        }`,
       );
 
       ok(res.schemas.Bar, "expected definition named Bar");
@@ -944,7 +979,7 @@ describe("openapi3: models", () => {
         model Bar {
           @doc("My doc")
           x: Foo.name
-        }`
+        }`,
       );
 
       ok(res.schemas.Bar, "expected definition named Bar");
@@ -966,7 +1001,7 @@ describe("openapi3: models", () => {
         model Bar {
           @doc("My doc override")
           x: Foo.name
-        }`
+        }`,
       );
 
       ok(res.schemas.Bar, "expected definition named Bar");
@@ -974,6 +1009,206 @@ describe("openapi3: models", () => {
         type: "string",
         description: "My doc override",
       });
+    });
+  });
+
+  it("@oneOf decorator can only be used on a union.", async () => {
+    const diagnostics = await diagnoseOpenApiFor(
+      `
+      model Foo {
+        @oneOf
+        bar: string;
+      }
+      `,
+    );
+
+    expectDiagnostics(diagnostics, {
+      code: "@typespec/openapi3/oneof-union",
+      message: /type/,
+    });
+  });
+
+  describe("wraps property $ref in allOf when extra attributes", () => {
+    it("with doc", async () => {
+      const res = await openApiFor(
+        `
+        model Foo {
+          /** Some doc */ prop: Bar;
+        };
+        model Bar {}
+        `,
+      );
+
+      deepStrictEqual(res.components.schemas.Foo.properties.prop, {
+        allOf: [{ $ref: "#/components/schemas/Bar" }],
+        description: "Some doc",
+      });
+    });
+
+    it("circular reference", async () => {
+      const res = await openApiFor(
+        `
+        model Foo {
+          /** Some doc */ prop: Foo;
+        };
+        `,
+      );
+
+      deepStrictEqual(res.components.schemas.Foo.properties.prop, {
+        allOf: [{ $ref: "#/components/schemas/Foo" }],
+        description: "Some doc",
+      });
+    });
+  });
+});
+
+worksFor(["3.0.0"], ({ oapiForModel }) => {
+  it("specify default value on nullable property", async () => {
+    const res = await oapiForModel(
+      "Foo",
+      `
+      model Foo {
+        optional?: string | null = null;
+      };
+      `,
+    );
+
+    ok(res.schemas.Foo, "expected definition named Foo");
+    deepStrictEqual(res.schemas.Foo, {
+      type: "object",
+      properties: {
+        optional: {
+          type: "string",
+          nullable: true,
+          default: null,
+        },
+      },
+    });
+  });
+
+  it("defines nullable properties", async () => {
+    const res = await oapiForModel(
+      "Pet",
+      `
+      model Pet {
+        name: string | null;
+      };
+      `,
+    );
+    ok(res.isRef);
+    deepStrictEqual(res.schemas.Pet, {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          nullable: true,
+        },
+      },
+      required: ["name"],
+    });
+  });
+
+  it("defines nullable array", async () => {
+    const res = await oapiForModel(
+      "Pet",
+      `
+      model Pet {
+        name: int32[] | null;
+      };
+      `,
+    );
+    ok(res.isRef);
+    deepStrictEqual(res.schemas.Pet, {
+      type: "object",
+      properties: {
+        name: {
+          type: "array",
+          items: {
+            type: "integer",
+            format: "int32",
+          },
+          nullable: true,
+        },
+      },
+      required: ["name"],
+    });
+  });
+});
+
+worksFor(["3.1.0"], ({ oapiForModel }) => {
+  // eslint-disable-next-line vitest/no-identical-title
+  it("specify default value on nullable property", async () => {
+    const res = await oapiForModel(
+      "Foo",
+      `
+      model Foo {
+        optional?: string | null = null;
+      };
+      `,
+    );
+
+    ok(res.schemas.Foo, "expected definition named Foo");
+    deepStrictEqual(res.schemas.Foo, {
+      type: "object",
+      properties: {
+        optional: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          default: null,
+        },
+      },
+    });
+  });
+
+  // eslint-disable-next-line vitest/no-identical-title
+  it("defines nullable properties", async () => {
+    const res = await oapiForModel(
+      "Pet",
+      `
+      model Pet {
+        name: string | null;
+      };
+      `,
+    );
+    ok(res.isRef);
+    deepStrictEqual(res.schemas.Pet, {
+      type: "object",
+      properties: {
+        name: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+      },
+      required: ["name"],
+    });
+  });
+
+  // eslint-disable-next-line vitest/no-identical-title
+  it("defines nullable array", async () => {
+    const res = await oapiForModel(
+      "Pet",
+      `
+      model Pet {
+        name: int32[] | null;
+      };
+      `,
+    );
+    ok(res.isRef);
+    deepStrictEqual(res.schemas.Pet, {
+      type: "object",
+      properties: {
+        name: {
+          anyOf: [
+            {
+              type: "array",
+              items: {
+                type: "integer",
+                format: "int32",
+              },
+            },
+            { type: "null" },
+          ],
+        },
+      },
+      required: ["name"],
     });
   });
 });

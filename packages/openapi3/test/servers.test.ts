@@ -1,16 +1,32 @@
 import { expectDiagnostics } from "@typespec/compiler/testing";
 import { deepStrictEqual } from "assert";
-import { describe, it } from "vitest";
-import { diagnoseOpenApiFor, openApiFor } from "./test-host.js";
+import { it } from "vitest";
+import { worksFor } from "./works-for.js";
 
-describe("openapi3: servers", () => {
-  it("set a basic server", async () => {
+worksFor(["3.0.0", "3.1.0"], ({ diagnoseOpenApiFor, openApiFor }) => {
+  it("set a basic server(url)", async () => {
+    const res = await openApiFor(
+      `
+      @service({title: "My service"})
+      @server("https://example.com")
+      namespace MyService {}
+      `,
+    );
+    deepStrictEqual(res.servers, [
+      {
+        url: "https://example.com",
+        variables: {},
+      },
+    ]);
+  });
+
+  it("set a basic server(url and desc)", async () => {
     const res = await openApiFor(
       `
       @service({title: "My service"})
       @server("https://example.com", "Main server")
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -27,7 +43,7 @@ describe("openapi3: servers", () => {
       @service({title: "My service"})
       @server("https://{region}.example.com", "Regional account endpoint", {region: int32})
       namespace MyService {}
-      `
+      `,
     );
     expectDiagnostics(diagnostics, {
       code: "@typespec/openapi3/invalid-server-variable",
@@ -47,7 +63,7 @@ describe("openapi3: servers", () => {
         westus, 
         eastus: 123,
       }
-      `
+      `,
     );
     expectDiagnostics(diagnostics, {
       code: "@typespec/openapi3/invalid-server-variable",
@@ -62,7 +78,7 @@ describe("openapi3: servers", () => {
       @service({title: "My service"})
       @server("https://{region}.example.com", "Regional account endpoint", {region: string | int32})
       namespace MyService {}
-      `
+      `,
     );
     expectDiagnostics(diagnostics, {
       code: "@typespec/openapi3/invalid-server-variable",
@@ -77,7 +93,7 @@ describe("openapi3: servers", () => {
       @service({title: "My service"})
       @server("https://{account}.{region}.example.com", "Regional account endpoint", {region: string, account: string})
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -100,7 +116,7 @@ describe("openapi3: servers", () => {
         account?: string = "default",
       })
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -123,7 +139,7 @@ describe("openapi3: servers", () => {
         region: string,
       })
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -145,7 +161,7 @@ describe("openapi3: servers", () => {
         region: string,
       })
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -167,7 +183,7 @@ describe("openapi3: servers", () => {
         region: Region, 
       })
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -189,7 +205,7 @@ describe("openapi3: servers", () => {
         region: "westus", 
       })
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -211,7 +227,7 @@ describe("openapi3: servers", () => {
         region: "westus" | "eastus", 
       })
       namespace MyService {}
-      `
+      `,
     );
     deepStrictEqual(res.servers, [
       {
@@ -220,6 +236,28 @@ describe("openapi3: servers", () => {
         variables: {
           region: { default: "", enum: ["westus", "eastus"] },
         },
+      },
+    ]);
+  });
+  it("set multiple servers", async () => {
+    const res = await openApiFor(
+      `
+        @service
+        @server("https://example1.com", "Main server1")
+        @server("https://example2.com", "Main server2")
+        namespace MyService {}
+        `,
+    );
+    deepStrictEqual(res.servers, [
+      {
+        description: "Main server2",
+        url: "https://example2.com",
+        variables: {},
+      },
+      {
+        description: "Main server1",
+        url: "https://example1.com",
+        variables: {},
       },
     ]);
   });

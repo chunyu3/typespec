@@ -1,4 +1,4 @@
-import { formatLog } from "./logger/index.js";
+import { formatLog } from "./logger/console-sink.js";
 import type { Program } from "./program.js";
 import { createSourceFile } from "./source-file.js";
 import {
@@ -10,6 +10,7 @@ import {
   Node,
   NodeFlags,
   NoTarget,
+  RelatedSourceLocation,
   SourceLocation,
   SymbolFlags,
   SyntaxKind,
@@ -35,21 +36,39 @@ export function logDiagnostics(diagnostics: readonly Diagnostic[], logger: LogSi
       level: diagnostic.severity,
       message: diagnostic.message,
       code: diagnostic.code,
+      url: diagnostic.url,
       sourceLocation: getSourceLocation(diagnostic.target, { locateId: true }),
+      related: getRelatedLocations(diagnostic),
     });
   }
 }
 
-export function formatDiagnostic(diagnostic: Diagnostic) {
+export interface FormatDiagnosticOptions {
+  readonly pretty?: boolean;
+  readonly pathRelativeTo?: string;
+}
+
+export function formatDiagnostic(diagnostic: Diagnostic, options: FormatDiagnosticOptions = {}) {
   return formatLog(
     {
       code: diagnostic.code,
       level: diagnostic.severity,
       message: diagnostic.message,
+      url: diagnostic.url,
       sourceLocation: getSourceLocation(diagnostic.target, { locateId: true }),
+      related: getRelatedLocations(diagnostic),
     },
-    { pretty: false }
+    { pretty: options?.pretty ?? false, pathRelativeTo: options?.pathRelativeTo },
   );
+}
+
+function getRelatedLocations(diagnostic: Diagnostic): RelatedSourceLocation[] {
+  return getDiagnosticTemplateInstantitationTrace(diagnostic.target).map((x) => {
+    return {
+      message: "occurred while instantiating template",
+      location: getSourceLocation(x),
+    };
+  });
 }
 
 export interface SourceLocationOptions {
@@ -61,19 +80,19 @@ export interface SourceLocationOptions {
 }
 export function getSourceLocation(
   target: DiagnosticTarget,
-  options?: SourceLocationOptions
+  options?: SourceLocationOptions,
 ): SourceLocation;
 export function getSourceLocation(
   target: typeof NoTarget | undefined,
-  options?: SourceLocationOptions
+  options?: SourceLocationOptions,
 ): undefined;
 export function getSourceLocation(
   target: DiagnosticTarget | typeof NoTarget | undefined,
-  options?: SourceLocationOptions
+  options?: SourceLocationOptions,
 ): SourceLocation | undefined;
 export function getSourceLocation(
   target: DiagnosticTarget | typeof NoTarget | undefined,
-  options: SourceLocationOptions = {}
+  options: SourceLocationOptions = {},
 ): SourceLocation | undefined {
   if (target === NoTarget || target === undefined) {
     return undefined;
@@ -83,7 +102,12 @@ export function getSourceLocation(
     return target;
   }
 
-  if (!("kind" in target)) {
+  if (!("kind" in target) && !("entityKind" in target)) {
+    // TemplateInstanceTarget
+    if (!("declarations" in target)) {
+      return getSourceLocationOfNode(target.node, options);
+    }
+
     // symbol
     if (target.flags & SymbolFlags.Using) {
       target = target.symbolSource!;
@@ -94,7 +118,7 @@ export function getSourceLocation(
     }
 
     return getSourceLocationOfNode(target.declarations[0], options);
-  } else if (typeof target.kind === "number") {
+  } else if ("kind" in target && typeof target.kind === "number") {
     // node
     return getSourceLocationOfNode(target as Node, options);
   } else {
@@ -107,6 +131,25 @@ export function getSourceLocation(
 
     return createSyntheticSourceLocation();
   }
+}
+
+/**
+ * @internal
+ */
+export function getDiagnosticTemplateInstantitationTrace(
+  target: DiagnosticTarget | typeof NoTarget | undefined,
+): Node[] {
+  if (typeof target !== "object" || !("templateMapper" in target)) {
+    return [];
+  }
+
+  const result = [];
+  let current = target.templateMapper;
+  while (current) {
+    result.push(current.source.node);
+    current = current.source.mapper;
+  }
+  return result;
 }
 
 function createSyntheticSourceLocation(loc = "<unknown location>") {
@@ -129,7 +172,7 @@ function getSourceLocationOfNode(node: Node, options: SourceLocationOptions): So
     return createSyntheticSourceLocation(
       node.flags & NodeFlags.Synthetic
         ? undefined
-        : "<unknown location - cannot obtain source location of unbound node - file bug at https://github.com/microsoft/typespec>"
+        : "<unknown location - cannot obtain source location of unbound node - file bug at https://github.com/microsoft/typespec>",
     );
   }
 
@@ -154,7 +197,7 @@ function getSourceLocationOfNode(node: Node, options: SourceLocationOptions): So
  * when verbose output is disabled.
  */
 export function logVerboseTestOutput(
-  messageOrCallback: string | ((log: (message: string) => void) => void)
+  messageOrCallback: string | ((log: (message: string) => void) => void),
 ) {
   if (process.env.TYPESPEC_VERBOSE_TEST_OUTPUT) {
     if (typeof messageOrCallback === "string") {
@@ -181,7 +224,7 @@ export function logVerboseTestOutput(
 export function compilerAssert(
   condition: any,
   message: string,
-  target?: DiagnosticTarget
+  target?: DiagnosticTarget,
 ): asserts condition {
   if (condition) {
     return;
@@ -227,7 +270,7 @@ export function assertType<TKind extends Type["kind"][]>(
 export function reportDeprecated(
   program: Program,
   message: string,
-  target: DiagnosticTarget | typeof NoTarget
+  target: DiagnosticTarget | typeof NoTarget,
 ): void {
   program.reportDiagnostic({
     severity: "warning",

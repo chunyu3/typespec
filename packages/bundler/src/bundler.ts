@@ -2,14 +2,7 @@ import commonjs from "@rollup/plugin-commonjs";
 import json from "@rollup/plugin-json";
 import nodeResolve from "@rollup/plugin-node-resolve";
 import virtual from "@rollup/plugin-virtual";
-import {
-  compile,
-  getNormalizedAbsolutePath,
-  joinPaths,
-  NodeHost,
-  normalizePath,
-  resolvePath,
-} from "@typespec/compiler";
+import { compile, joinPaths, NodeHost, normalizePath, resolvePath } from "@typespec/compiler";
 import { mkdir, readFile, realpath, writeFile } from "fs/promises";
 import { basename, join, resolve } from "path";
 import { OutputChunk, rollup, RollupBuild, RollupOptions, watch } from "rollup";
@@ -80,7 +73,7 @@ export async function createTypeSpecBundle(libraryPath: string): Promise<TypeSpe
 
 export async function watchTypeSpecBundle(
   libraryPath: string,
-  onBundle: (bundle: TypeSpecBundle) => void
+  onBundle: (bundle: TypeSpecBundle) => void,
 ) {
   const definition = await resolveTypeSpecBundleDefinition(libraryPath);
   const rollupOptions = await createRollupConfig(definition);
@@ -91,7 +84,6 @@ export async function watchTypeSpecBundle(
     },
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   watcher.on("event", async (event) => {
     switch (event.code) {
       case "BUNDLE_START":
@@ -123,14 +115,14 @@ export async function bundleTypeSpecLibrary(libraryPath: string, outputDir: stri
 }
 
 async function resolveTypeSpecBundleDefinition(
-  libraryPath: string
+  libraryPath: string,
 ): Promise<TypeSpecBundleDefinition> {
   libraryPath = normalizePath(await realpath(libraryPath));
   const pkg = await readLibraryPackageJson(libraryPath);
 
   const exports = pkg.exports
     ? Object.fromEntries(
-        Object.entries(pkg.exports).filter(([k, v]) => k !== "." && k !== "./testing")
+        Object.entries(pkg.exports).filter(([k, v]) => k !== "." && k !== "./testing"),
       )
     : {};
 
@@ -147,22 +139,23 @@ async function createRollupConfig(definition: TypeSpecBundleDefinition): Promise
   const program = await compile(NodeHost, libraryPath, {
     noEmit: true,
   });
-  const jsFiles: string[] = [];
+  const jsFiles = new Set([resolvePath(libraryPath, definition.packageJson.main)]);
   for (const file of program.jsSourceFiles.keys()) {
     if (file.startsWith(libraryPath)) {
-      jsFiles.push(file);
+      jsFiles.add(file);
     }
   }
   const typespecFiles: Record<string, string> = {
     [normalizePath(join(libraryPath, "package.json"))]: JSON.stringify(definition.packageJson),
   };
+
   for (const [filename, sourceFile] of program.sourceFiles) {
     typespecFiles[filename] = sourceFile.file.text;
   }
   const content = createBundleEntrypoint({
     libraryPath,
     mainFile: definition.main,
-    jsSourceFileNames: jsFiles,
+    jsSourceFileNames: [...jsFiles],
     typespecSourceFiles: typespecFiles,
   });
 
@@ -172,7 +165,7 @@ async function createRollupConfig(definition: TypeSpecBundleDefinition): Promise
         key.replace("./", ""),
         normalizePath(resolve(libraryPath, getExportEntryPoint(value))),
       ];
-    })
+    }),
   );
   return {
     input: {
@@ -207,7 +200,7 @@ async function createRollupConfig(definition: TypeSpecBundleDefinition): Promise
 
 async function generateTypeSpecBundle(
   definition: TypeSpecBundleDefinition,
-  bundle: RollupBuild
+  bundle: RollupBuild,
 ): Promise<TypeSpecBundle> {
   const { output } = await bundle.generate({
     dir: "virtual",
@@ -256,7 +249,6 @@ function createBundleEntrypoint({
   const relativeTypeSpecFiles: Record<string, string> = {};
   for (const [name, content] of Object.entries(typespecSourceFiles)) {
     relativeTypeSpecFiles[relativeTo(libraryPath, name)] = content;
-    getNormalizedAbsolutePath;
   }
   return [
     `export * from "${absoluteMain}";`,

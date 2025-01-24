@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import inspector from "inspector";
 import { join } from "path";
 import { fileURLToPath } from "url";
+import { inspect } from "util";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   ApplyWorkspaceEditParams,
@@ -15,7 +16,7 @@ import {
 import { NodeHost } from "../core/node-host.js";
 import { typespecVersion } from "../utils/misc.js";
 import { createServer } from "./serverlib.js";
-import { Server, ServerHost } from "./types.js";
+import { CustomRequestName, Server, ServerHost, ServerLog } from "./types.js";
 
 let server: Server | undefined = undefined;
 
@@ -45,8 +46,37 @@ function main() {
     sendDiagnostics(params: PublishDiagnosticsParams) {
       void connection.sendDiagnostics(params);
     },
-    log(message: string) {
-      connection.console.log(message);
+    log(log: ServerLog) {
+      const message = log.message;
+      let detail: string | undefined = undefined;
+      let fullMessage = message;
+      if (log.detail) {
+        detail = typeof log.detail === "string" ? log.detail : inspect(log.detail);
+        fullMessage = `${message}:\n${detail}`;
+      }
+
+      switch (log.level) {
+        case "trace":
+          connection.tracer.log(message, detail);
+          break;
+        case "debug":
+          connection.console.debug(fullMessage);
+          break;
+        case "info":
+          connection.console.info(fullMessage);
+          break;
+        case "warning":
+          connection.console.warn(fullMessage);
+          break;
+        case "error":
+          connection.console.error(fullMessage);
+          break;
+        default:
+          connection.console.error(
+            `Log Message with invalid LogLevel (${log.level}). Raw Message: ${fullMessage}`,
+          );
+          break;
+      }
     },
     getOpenDocumentByURL(url: string) {
       return documents.get(url);
@@ -58,13 +88,13 @@ function main() {
 
   const s = createServer(host);
   server = s;
-  s.log(`TypeSpec language server v${typespecVersion}`);
-  s.log("Module", fileURLToPath(import.meta.url));
-  s.log("Process ID", process.pid);
-  s.log("Command Line", process.argv);
+  s.log({ level: `info`, message: `TypeSpec language server v${typespecVersion}` });
+  s.log({ level: `info`, message: `Module: ${fileURLToPath(import.meta.url)}` });
+  s.log({ level: `info`, message: `Process ID: ${process.pid}` });
+  s.log({ level: `info`, message: `Command Line`, detail: process.argv });
 
   if (profileDir) {
-    s.log("CPU profiling enabled", profileDir);
+    s.log({ level: `info`, message: `CPU profiling enabled with dir: ${profileDir}` });
     profileSession = new inspector.Session();
     profileSession.connect();
   }
@@ -99,6 +129,13 @@ function main() {
   connection.onExecuteCommand(profile(s.executeCommand));
   connection.languages.semanticTokens.on(profile(s.buildSemanticTokens));
 
+  const validateInitProjectTemplate: CustomRequestName = "typespec/validateInitProjectTemplate";
+  connection.onRequest(validateInitProjectTemplate, profile(s.validateInitProjectTemplate));
+  const getInitProjectContextRequestName: CustomRequestName = "typespec/getInitProjectContext";
+  connection.onRequest(getInitProjectContextRequestName, profile(s.getInitProjectContext));
+  const initProjectRequestName: CustomRequestName = "typespec/initProject";
+  connection.onRequest(initProjectRequestName, profile(s.initProject));
+
   documents.onDidChangeContent(profile(s.checkChange));
   documents.onDidClose(profile(s.documentClosed));
 
@@ -131,10 +168,8 @@ function profile<T extends (...args: any) => any>(func: T): T {
 
   return (async (...args: any[]) => {
     profileSession!.post("Profiler.enable", () => {
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       profileSession!.post("Profiler.start", async () => {
         const ret = await func.apply(undefined!, args);
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
         profileSession!.post("Profiler.stop", async (err, args) => {
           if (!err && args.profile) {
             await mkdir(profileDir!, { recursive: true });
@@ -152,7 +187,7 @@ function time<T extends (...args: any) => any>(func: T): T {
     const start = Date.now();
     const ret = await func.apply(undefined!, args);
     const end = Date.now();
-    server!.log(func.name, end - start + " ms");
+    server!.log({ level: `trace`, message: `${func.name}: ${end - start + " ms"}` });
     return ret;
   }) as T;
 }

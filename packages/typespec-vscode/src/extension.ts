@@ -1,199 +1,208 @@
-import { ResolveModuleHost } from "@typespec/compiler/module-resolver";
-import { readFile, realpath, stat } from "fs/promises";
-import { join } from "path";
-import vscode, { ExtensionContext, commands, workspace } from "vscode";
+import vscode, { commands, ExtensionContext, TabInputText } from "vscode";
+import { State } from "vscode-languageclient";
+import { createCodeActionProvider } from "./code-action-provider.js";
+import { ExtensionStateManager } from "./extension-state-manager.js";
+import { ExtensionLogListener, getPopupAction } from "./log/extension-log-listener.js";
+import logger from "./log/logger.js";
+import { TypeSpecLogOutputChannel } from "./log/typespec-log-output-channel.js";
+import { createTaskProvider } from "./task-provider.js";
+import { TspLanguageClient } from "./tsp-language-client.js";
 import {
-  Executable,
-  ExecutableOptions,
-  LanguageClient,
-  LanguageClientOptions,
-} from "vscode-languageclient/node.js";
+  CommandName,
+  InstallGlobalCliCommandArgs,
+  RestartServerCommandArgs,
+  SettingName,
+} from "./types.js";
+import { isWhitespaceStringOrUndefined } from "./utils.js";
+import { createTypeSpecProject } from "./vscode-cmd/create-tsp-project.js";
+import { emitCode } from "./vscode-cmd/emit-code/emit-code.js";
+import { installCompilerGlobally } from "./vscode-cmd/install-tsp-compiler.js";
 
-let client: LanguageClient | undefined;
+let client: TspLanguageClient | undefined;
+/**
+ * Workaround: LogOutputChannel doesn't work well with LSP RemoteConsole, so having a customized LogOutputChannel to make them work together properly
+ * More detail can be found at https://github.com/microsoft/vscode-discussions/discussions/1149
+ */
+const outputChannel = new TypeSpecLogOutputChannel("TypeSpec");
+logger.registerLogListener("extension-log", new ExtensionLogListener(outputChannel));
 
 export async function activate(context: ExtensionContext) {
+  const stateManager = new ExtensionStateManager(context);
+
+  context.subscriptions.push(createTaskProvider());
+
+  context.subscriptions.push(createCodeActionProvider());
+
   context.subscriptions.push(
-    commands.registerCommand("typespec.restartServer", restartTypeSpecServer)
+    commands.registerCommand(CommandName.ShowOutputChannel, () => {
+      outputChannel.show(true /*preserveFocus*/);
+    }),
   );
 
-  return await vscode.window.withProgress(
-    {
-      title: "Launching TypeSpec language service...",
-      location: vscode.ProgressLocation.Notification,
-    },
-    async () => launchLanguageClient(context)
+  context.subscriptions.push(
+    commands.registerCommand(CommandName.OpenUrl, (url: string) => {
+      try {
+        vscode.env.openExternal(vscode.Uri.parse(url));
+      } catch (error) {
+        logger.error(`Failed to open URL: ${url}`, [error as any]);
+      }
+    }),
   );
-}
 
-async function restartTypeSpecServer(): Promise<void> {
-  if (client) {
-    await client.stop();
-    await client.start();
-  }
-}
-
-async function launchLanguageClient(context: ExtensionContext) {
-  const exe = await resolveTypeSpecServer(context);
-  const options: LanguageClientOptions = {
-    synchronize: {
-      // Synchronize the setting section 'typespec' to the server
-      configurationSection: "typespec",
-      fileEvents: [
-        workspace.createFileSystemWatcher("**/*.cadl"),
-        workspace.createFileSystemWatcher("**/cadl-project.yaml"),
-        workspace.createFileSystemWatcher("**/*.tsp"),
-        workspace.createFileSystemWatcher("**/tspconfig.yaml"),
-        workspace.createFileSystemWatcher("**/package.json"),
-      ],
-    },
-    documentSelector: [
-      { scheme: "file", language: "typespec" },
-      { scheme: "untitled", language: "typespec" },
-    ],
-  };
-
-  const name = "TypeSpec";
-  const id = "typespecLanguageServer";
-  try {
-    client = new LanguageClient(id, name, { run: exe, debug: exe }, options);
-    await client.start();
-  } catch (e) {
-    if (typeof e === "string" && e.startsWith("Launching server using command")) {
-      const workspaceFolder = workspace.workspaceFolders?.[0]?.uri?.fsPath ?? "";
-
-      client?.error(
-        [
-          `TypeSpec server executable was not found: '${exe.command}' is not found. Make sure either:`,
-          ` - TypeSpec is installed locally at the root of this workspace ("${workspaceFolder}") or in a parent directory.`,
-          " - TypeSpec is installed globally with `npm install -g @typespec/compiler'.",
-          " - TypeSpec server path is configured with https://github.com/microsoft/typespec#installing-vs-code-extension.",
-        ].join("\n"),
-        undefined,
-        false
+  /* emit command. */
+  context.subscriptions.push(
+    commands.registerCommand(CommandName.GenerateCode, async (uri: vscode.Uri) => {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Window,
+          title: "Generate from TypeSpec...",
+          cancellable: false,
+        },
+        async () => await emitCode(context, uri),
       );
-      throw `TypeSpec server executable was not found: '${exe.command}' is not found.`;
-    } else {
-      throw e;
-    }
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      CommandName.RestartServer,
+      async (args: RestartServerCommandArgs | undefined): Promise<TspLanguageClient> => {
+        return vscode.window.withProgress(
+          {
+            title: args?.notificationMessage ?? "Restarting TypeSpec language service...",
+            location: vscode.ProgressLocation.Notification,
+          },
+          async () => {
+            if (args?.forceRecreate === true) {
+              logger.info("Forcing to recreate TypeSpec LSP server...");
+              return await recreateLSPClient(context);
+            }
+            if (client && client.state === State.Running) {
+              await client.restart();
+              return client;
+            } else {
+              logger.info(
+                "TypeSpec LSP server is not running which is not expected, try to recreate and start...",
+              );
+              return recreateLSPClient(context);
+            }
+          },
+        );
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      CommandName.InstallGlobalCompilerCli,
+      async (args: InstallGlobalCliCommandArgs | undefined) => {
+        return await installCompilerGlobally(args);
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(CommandName.CreateProject, async () => {
+      await createTypeSpecProject(client, stateManager);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(async (e: vscode.ConfigurationChangeEvent) => {
+      if (e.affectsConfiguration(SettingName.TspServerPath)) {
+        logger.info("TypeSpec server path changed, restarting server...");
+        await recreateLSPClient(context);
+      }
+    }),
+  );
+
+  // Only try to start language server when some workspace has been opened
+  // because the LanguageClient class will popup error notification in vscode directly if failing to start
+  // which will be confusing to user if no workspace is opened (i.e. in Create TypeSpec project scenario)
+  if (
+    (vscode.workspace.workspaceFolders?.length ?? 0) > 0 ||
+    // still need to check opened files when there is no workspace opened
+    vscode.window.tabGroups.all
+      .flatMap((tg) => tg.tabs)
+      .findIndex((t) => {
+        if (!t.input || !(t.input instanceof TabInputText) || !t.input.uri) {
+          return false;
+        }
+        // When an untitled file being renamed to .tsp file, our extension will be activated
+        // before the file info being refreshed properly, so need to check the untitled file too here.
+        // untitled file has the scheme "untitled"
+        if (t.input.uri.scheme === "untitled") {
+          return true;
+        }
+        // only handle .tsp file, not tspconfig.yaml file because
+        // vscode won't activate our extension if tspconfig.yaml is opened without workspace because we are using "workspaceContains:..." activation event now.
+        // In order to cover "tspconfig.yaml" file, we would need to hook on "onStartupFinish" or "*" activation event
+        // and check whether we should do real job in onDidOpenTextDocument event ourselves.
+        // Considering
+        //   - it's not a good idea to start our extension whenever vscode is started
+        //   - the increasement of complaxity to handle activation ourselves
+        //   - purely open a tspconfig.yaml file without other .tsp file as well as without workspace is a related corner case
+        //   - user can easily workaround this by calling "Restart TypeSpec Server" command
+        // We won't handle this case for now and may revisit this if we get more feedbacks from users.
+        return t.input.uri.fsPath.endsWith(".tsp");
+      }) >= 0
+  ) {
+    await vscode.window.withProgress(
+      {
+        title: "Launching TypeSpec language service...",
+        location: vscode.ProgressLocation.Notification,
+      },
+      async () => {
+        await recreateLSPClient(context);
+      },
+    );
+  } else {
+    logger.info("No workspace opened, Skip starting TypeSpec language service.");
   }
-}
-
-async function resolveTypeSpecServer(context: ExtensionContext): Promise<Executable> {
-  const nodeOptions = process.env.TYPESPEC_SERVER_NODE_OPTIONS;
-  const args = ["--stdio"];
-
-  // In development mode (F5 launch from source), resolve to locally built server.js.
-  if (process.env.TYPESPEC_DEVELOPMENT_MODE) {
-    const script = context.asAbsolutePath("../compiler/entrypoints/server.js");
-    // we use CLI instead of NODE_OPTIONS environment variable in this case
-    // because --nolazy is not supported by NODE_OPTIONS.
-    const options = nodeOptions?.split(" ").filter((o) => o) ?? [];
-    return { command: "node", args: [...options, script, ...args] };
-  }
-
-  const options: ExecutableOptions = {
-    env: { ...process.env },
-  };
-  if (nodeOptions) {
-    options.env.NODE_OPTIONS = nodeOptions;
-  }
-
-  // In production, first try VS Code configuration, which allows a global machine
-  // location that is not on PATH, or a workspace-specific installation.
-  let serverPath: string | undefined = workspace.getConfiguration().get("typespec.tsp-server.path");
-  if (serverPath && typeof serverPath !== "string") {
-    throw new Error("VS Code configuration option 'typespec.tsp-server.path' must be a string");
-  }
-  const workspaceFolder = workspace.workspaceFolders?.[0]?.uri?.fsPath ?? "";
-
-  // Default to tsp-server on PATH, which would come from `npm install -g
-  // @typespec/compiler` in a vanilla setup.
-  if (!serverPath) {
-    serverPath = await resolveLocalCompiler(workspaceFolder);
-  }
-  if (!serverPath) {
-    const executable = process.platform === "win32" ? "tsp-server.cmd" : "tsp-server";
-    return { command: executable, args, options };
-  }
-  const variableResolver = new VSCodeVariableResolver({
-    workspaceFolder,
-    workspaceRoot: workspaceFolder, // workspaceRoot is deprecated but we still support it for backwards compatibility.
-  });
-
-  serverPath = variableResolver.resolve(serverPath);
-
-  if (!serverPath.endsWith(".js")) {
-    // Allow path to tsp-server.cmd to be passed.
-    if (await isFile(serverPath)) {
-      const command =
-        process.platform === "win32" && !serverPath.endsWith(".cmd")
-          ? `${serverPath}.cmd`
-          : "tsp-server";
-
-      return { command, args, options };
-    } else {
-      serverPath = join(serverPath, "cmd/tsp-server.js");
-    }
-  }
-
-  options.env["TYPESPEC_SKIP_COMPILER_RESOLVE"] = "1";
-  return { command: "node", args: [serverPath, ...args], options };
-}
-
-async function resolveLocalCompiler(baseDir: string): Promise<string | undefined> {
-  // dynamic import required when unbundled as this module is CommonJS for
-  // VS Code and the module-resolver is an ES module.
-  const { resolveModule } = await import("@typespec/compiler/module-resolver");
-
-  const host: ResolveModuleHost = {
-    realpath,
-    readFile: (path: string) => readFile(path, "utf-8"),
-    stat,
-  };
-  try {
-    const executable = await resolveModule(host, "@typespec/compiler", {
-      baseDir,
-    });
-    if (executable.type === "module") {
-      return executable.path;
-    }
-  } catch (e) {
-    // Couldn't find the module
-  }
-
-  return undefined;
-}
-
-async function isFile(path: string) {
-  try {
-    const stats = await stat(path);
-    return stats.isFile();
-  } catch {
-    return false;
-  }
+  showStartUpMessages(stateManager);
 }
 
 export async function deactivate() {
   await client?.stop();
 }
 
-/**
- * Resolve some of the VSCode variables.
- * Simpler aLternative until https://github.com/microsoft/vscode/issues/46471 is supported.
- */
-class VSCodeVariableResolver {
-  static readonly VARIABLE_REGEXP = /\$\{(.*?)\}/g;
+async function recreateLSPClient(context: ExtensionContext) {
+  logger.info("Recreating TypeSpec LSP server...");
+  const oldClient = client;
+  client = await TspLanguageClient.create(context, outputChannel);
+  await oldClient?.stop();
+  await client.start();
+  return client;
+}
 
-  public constructor(private variables: Record<string, string>) {}
-
-  public resolve(value: string): string {
-    const replaced = value.replace(
-      VSCodeVariableResolver.VARIABLE_REGEXP,
-      (match: string, variable: string) => {
-        return this.variables[variable] ?? match;
+function showStartUpMessages(stateManager: ExtensionStateManager) {
+  vscode.workspace.workspaceFolders?.forEach((workspaceFolder) => {
+    const msg = stateManager.loadStartUpMessage(workspaceFolder.uri.fsPath);
+    if (msg) {
+      logger.log("debug", "Start up message found for folder: " + workspaceFolder.uri.fsPath);
+      if (isWhitespaceStringOrUndefined(msg.detail)) {
+        logger.log(msg.level, msg.popupMessage, [], {
+          showPopup: true,
+        });
+      } else {
+        const SHOW_DETAIL = "View Details in Output";
+        const popupAction = getPopupAction(msg.level);
+        if (popupAction) {
+          popupAction(msg.popupMessage, SHOW_DETAIL).then((action) => {
+            if (action === SHOW_DETAIL) {
+              outputChannel.show(true);
+            }
+            // log the start up message to Output no matter user clicked the button or not
+            // and there are many logs coming when starting the extension, so
+            // log the message when the popup is clicked (or disappearing) to make sure these logs are shown at the end of the Output window to catch
+            // user's attention.
+            logger.log(msg.level, msg.popupMessage + "\n", [msg.detail]);
+          });
+        }
       }
-    );
-
-    return replaced;
-  }
+    } else {
+      logger.log("debug", "No start up message found for folder: " + workspaceFolder.uri.fsPath);
+    }
+    stateManager.cleanUpStartUpMessage(workspaceFolder.uri.fsPath);
+  });
 }

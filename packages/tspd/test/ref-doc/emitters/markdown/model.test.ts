@@ -24,7 +24,28 @@ it("render simple model", async () => {
       "",
       "## Properties",
       "None",
-    ].join("\n")
+    ].join("\n"),
+  );
+});
+
+it("render deprecation notice", async () => {
+  const result = await renderModel(`
+    #deprecated "Use something else"
+    model Test {}`);
+  expect(result).toEqual(
+    [
+      "# `Test`",
+      "_Deprecated: Use something else_",
+      "",
+      "",
+      "```typespec",
+      "model Lib.Test",
+      "```",
+      "",
+      "",
+      "## Properties",
+      "None",
+    ].join("\n"),
   );
 });
 
@@ -47,7 +68,7 @@ it("render model with template parameter", async () => {
       "",
       "## Properties",
       "None",
-    ].join("\n")
+    ].join("\n"),
   );
 });
 
@@ -80,7 +101,7 @@ describe("model examples", () => {
         "",
         "## Properties",
         "None",
-      ].join("\n")
+      ].join("\n"),
     );
   });
 
@@ -123,7 +144,7 @@ describe("model examples", () => {
         "",
         "## Properties",
         "None",
-      ].join("\n")
+      ].join("\n"),
     );
   });
 });
@@ -150,6 +171,17 @@ describe("properties table", () => {
     await expectTable({
       code: `model Test { name: string, other: int32 }`,
       rows: ["| name | `string` |  |", "| other | `int32` |  |"],
+    });
+  });
+
+  it("render deprecated properties", async () => {
+    await expectTable({
+      code: `model Test { 
+        #deprecated "Use other"
+        name: string, 
+        other: int32
+      }`,
+      rows: ["| ~~name~~ _DEPRECATED_ | `string` |  |", "| other | `int32` |  |"],
     });
   });
 

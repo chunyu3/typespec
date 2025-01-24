@@ -1,6 +1,6 @@
 import { createTypeSpecLibrary, paramMessage } from "@typespec/compiler";
 
-const libDef = {
+export const $lib = createTypeSpecLibrary({
   name: "@typespec/versioning",
   diagnostics: {
     "versioned-dependency-tuple": {
@@ -89,6 +89,12 @@ const libDef = {
         default: paramMessage`Property '${"name"}' marked with @madeOptional but is required. Should be '${"name"}?'`,
       },
     },
+    "made-required-optional": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Property '${"name"}?' marked with @madeRequired but is optional. Should be '${"name"}'`,
+      },
+    },
     "renamed-duplicate-property": {
       severity: "error",
       messages: {
@@ -96,5 +102,20 @@ const libDef = {
       },
     },
   },
-} as const;
-export const { reportDiagnostic, createStateSymbol } = createTypeSpecLibrary(libDef);
+  state: {
+    versionIndex: { description: "Version index" },
+
+    addedOn: { description: "State for @addedOn decorator" },
+    removedOn: { description: "State for @removedOn decorator" },
+    versions: { description: "State for @versioned decorator" },
+    useDependencyNamespace: { description: "State for @useDependency decorator on Namespaces" },
+    useDependencyEnum: { description: "State for @useDependency decorator on Enums" },
+    renamedFrom: { description: "State for @renamedFrom decorator" },
+    madeOptional: { description: "State for @madeOptional decorator" },
+    madeRequired: { description: "State for @madeRequired decorator" },
+    typeChangedFrom: { description: "State for @typeChangedFrom decorator" },
+    returnTypeChangedFrom: { description: "State for @returnTypeChangedFrom decorator" },
+  },
+});
+
+export const { reportDiagnostic, createStateSymbol, stateKeys: VersioningStateKeys } = $lib;

@@ -1,5 +1,102 @@
 # Change Log - @typespec/playground
 
+## 0.7.0
+
+### Features
+
+- [#5372](https://github.com/microsoft/typespec/pull/5372) Add support for displaying array-based emitter options
+
+
+## 0.6.1
+
+No changes, version bump only.
+
+## 0.6.0
+
+### Bug Fixes
+
+- [#4719](https://github.com/microsoft/typespec/pull/4719) Fix dark theme not applying
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+### Features
+
+- [#4587](https://github.com/microsoft/typespec/pull/4587) Expose state storage helper via its own exports
+
+
+## 0.5.0
+
+### Bug Fixes
+
+- [#4606](https://github.com/microsoft/typespec/pull/4606) Do not treat path as relative internally
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+### Features
+
+- [#4538](https://github.com/microsoft/typespec/pull/4538) Upgrade to latest monaco-editor
+
+
+## 0.4.2
+
+### Bug Fixes
+
+- [#4276](https://github.com/microsoft/typespec/pull/4276) Accessibility, increase footer contrast
+- [#4081](https://github.com/microsoft/typespec/pull/4081) Fix: Reloading the playground will not register the typespec language server
+
+
+## 0.4.1
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+
+## 0.4.0
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+### Features
+
+- [#3585](https://github.com/microsoft/typespec/pull/3585) Add error recovery for viewer that crash
+- [#3750](https://github.com/microsoft/typespec/pull/3750) Add new property on the playground to add custom buttons on the toolbar
+- [#3713](https://github.com/microsoft/typespec/pull/3713) Extract splitpane into separate package
+
+
+## 0.3.0
+
+### Bug Fixes
+
+- [#3542](https://github.com/microsoft/typespec/pull/3542) Fix issue where hover tooltip would be cropped or not visible
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+### Features
+
+- [#3465](https://github.com/microsoft/typespec/pull/3465) Provide ability to add custom program viewers
+- [#3569](https://github.com/microsoft/typespec/pull/3569) Support loglevel in playground's logging
+
+
+## 0.2.2
+
+### Bug Fixes
+
+- [#3170](https://github.com/microsoft/typespec/pull/3170) Add support for new intrinsic vs std lib split in the compiler.
+- [#3151](https://github.com/microsoft/typespec/pull/3151) Fix completion of keywords
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+
 ## 0.2.1
 
 ### Bug Fixes

@@ -1,11 +1,9 @@
 // @ts-check
 import eslint from "@eslint/js";
-import deprecation from "eslint-plugin-deprecation";
+import reactHooks from "eslint-plugin-react-hooks";
 import unicorn from "eslint-plugin-unicorn";
 import vitest from "eslint-plugin-vitest";
-import { dirname } from "path";
 import tsEslint from "typescript-eslint";
-import { fileURLToPath } from "url";
 
 /** Config that will apply to all files */
 const allFilesConfig = tsEslint.config({
@@ -21,13 +19,23 @@ const allFilesConfig = tsEslint.config({
     "@typescript-eslint/no-inferrable-types": "off",
     "@typescript-eslint/no-empty-function": "off",
     "@typescript-eslint/no-empty-interface": "off",
+    "@typescript-eslint/no-empty-object-type": "off",
     "@typescript-eslint/no-unused-vars": [
       "warn",
-      { varsIgnorePattern: "^_", argsIgnorePattern: ".*", ignoreRestSiblings: true },
+      {
+        varsIgnorePattern: "^_",
+        argsIgnorePattern: ".*",
+        ignoreRestSiblings: true,
+        caughtErrorsIgnorePattern: ".*",
+      },
     ],
 
     // This rule is bugged https://github.com/typescript-eslint/typescript-eslint/issues/6538
     "@typescript-eslint/no-misused-promises": "off",
+    "@typescript-eslint/no-unused-expressions": [
+      "warn",
+      { allowShortCircuit: true, allowTernary: true },
+    ],
 
     /**
      * Unicorn
@@ -64,20 +72,25 @@ const allFilesConfig = tsEslint.config({
  */
 export function getTypeScriptProjectRules(root) {
   return tsEslint.config({
-    files: ["**/*.ts", "**/*.tsx"],
-    plugins: {
-      deprecation,
-    },
+    files: ["**/packages/*/src/**/*.ts", "**/packages/*/src/**/*.tsx"],
+    ignores: [
+      "**/packages/http-client-csharp/**/*",
+      "**/packages/http-client-java/**/*",
+      "**/packages/http-client-python/**/*",
+    ], // Ignore isolated modules
+    plugins: {},
     languageOptions: {
       parserOptions: {
-        project: "./tsconfig.json",
+        projectService: {
+          allowDefaultProject: ["packages/*/vitest.config.ts"],
+        },
         tsconfigRootDir: root,
       },
     },
     rules: {
       // Only put rules here that need typescript project information
       "@typescript-eslint/no-floating-promises": "error",
-      "deprecation/deprecation": ["warn"],
+      "@typescript-eslint/no-deprecated": "warn",
     },
   });
 }
@@ -104,10 +117,20 @@ const testFilesConfig = tsEslint.config({
   },
 });
 
+const jsxFilesConfig = tsEslint.config({
+  files: ["**/*.tsx"],
+  plugins: { "react-hooks": reactHooks },
+  rules: {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+  },
+});
+
 export const TypeSpecCommonEslintConfigs = [
   eslint.configs.recommended,
   ...tsEslint.configs.recommended,
   ...allFilesConfig,
+  ...jsxFilesConfig,
   ...testFilesConfig,
 ];
 
@@ -116,10 +139,15 @@ export default tsEslint.config(
     ignores: [
       "**/dist/**/*",
       "**/.temp/**/*",
+      "**/temp/**/*",
       "**/generated-defs/*",
       "**/website/build/**/*",
+      "**/.astro/**/*",
       "**/.docusaurus/**/*",
+      "website/src/assets/**/*",
       "packages/compiler/templates/**/*", // Ignore the templates which might have invalid code and not follow exactly our rules.
+      "**/venv/**/*", // Ignore python virtual env
+      "**/.vscode-test-web/**/*", // Ignore VSCode test web project
       // TODO: enable
       "**/.scripts/**/*",
       "eng/tsp-core/scripts/**/*",
@@ -128,5 +156,5 @@ export default tsEslint.config(
     ],
   },
   ...TypeSpecCommonEslintConfigs,
-  ...getTypeScriptProjectRules(dirname(fileURLToPath(import.meta.url)))
+  ...getTypeScriptProjectRules(import.meta.dirname),
 );

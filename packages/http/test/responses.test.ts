@@ -7,7 +7,7 @@ import { compileOperations, getOperationsWithServiceNamespace } from "./test-hos
 describe("body resolution", () => {
   it("emit diagnostics for duplicate @body decorator", async () => {
     const [_, diagnostics] = await compileOperations(
-      `op read(): { @body body1: string, @body body2: int32 };`
+      `op read(): { @body body1: string, @body body2: int32 };`,
     );
     expectDiagnostics(diagnostics, [
       { code: "@typespec/http/duplicate-body" },
@@ -17,7 +17,7 @@ describe("body resolution", () => {
 
   it("emit diagnostics for duplicate @bodyRoot decorator", async () => {
     const [_, diagnostics] = await compileOperations(
-      `op read(): { @bodyRoot body1: string, @bodyRoot body2: int32 };`
+      `op read(): { @bodyRoot body1: string, @bodyRoot body2: int32 };`,
     );
     expectDiagnostics(diagnostics, [
       { code: "@typespec/http/duplicate-body" },
@@ -27,7 +27,7 @@ describe("body resolution", () => {
 
   it("emit diagnostics for using @body and @bodyRoute decorator", async () => {
     const [_, diagnostics] = await compileOperations(
-      `op read(): { @bodyRoot body1: string, @body body2: int32 };`
+      `op read(): { @bodyRoot body1: string, @body body2: int32 };`,
     );
     expectDiagnostics(diagnostics, [
       { code: "@typespec/http/duplicate-body" },
@@ -57,16 +57,34 @@ describe("body resolution", () => {
       ["@statusCode", "_: 200"],
     ])("%s", async (dec, prop) => {
       const [_, diagnostics] = await compileOperations(
-        `op read(): { @body explicit: {${dec} ${prop}, other: string} };`
+        `op read(): { @body explicit: {${dec} ${prop}, other: string} };`,
       );
       expectDiagnostics(diagnostics, { code: "@typespec/http/metadata-ignored" });
     });
   });
 });
 
+describe("response cookie", () => {
+  it("emit diagnostics for implicit @cookie in the response", async () => {
+    const [_, diagnostics] = await compileOperations(`
+        op get(): { @cookie token: string };
+      `);
+
+    expectDiagnostics(diagnostics, { code: "@typespec/http/response-cookie-not-supported" });
+  });
+
+  it("doesn't emit response-cookie-not-supported diagnostics for explicit @cookie in the response", async () => {
+    const [_, diagnostics] = await compileOperations(`
+        op get(): { @body explicit: { @cookie token: string } };
+      `);
+
+    expectDiagnostics(diagnostics, { code: "@typespec/http/metadata-ignored" });
+  });
+});
+
 it("doesn't emit diagnostic if the metadata is not applicable in the response", async () => {
   const [_, diagnostics] = await compileOperations(
-    `op read(): { @body explicit: {@path id: string} };`
+    `op read(): { @body explicit: {@path id: string} };`,
   );
   expectDiagnosticEmpty(diagnostics);
 });
@@ -84,14 +102,14 @@ it("issues diagnostics for invalid content types", async () => {
 
       @route("/test1")
       @get
-      op test1(): { @header contentType: string, @body body: Foo };
+      op test1(): { @header contentType: int32, @body body: Foo };
       @route("/test2")
       @get
       op test2(): { @header contentType: 42, @body body: Foo };
       @route("/test3")
       @get
       op test3(): { @header contentType: "application/json" | TextPlain, @body body: Foo };
-    `
+    `,
   );
   expectDiagnostics(diagnostics, [
     { code: "@typespec/http/content-type-string" },
@@ -106,17 +124,14 @@ it("supports any casing for string literal 'Content-Type' header properties.", a
       model Foo {}
 
       @route("/test1")
-      @get
       op test1(): { @header "content-Type": "text/html", @body body: Foo };
 
       @route("/test2")
-      @get
       op test2(): { @header "CONTENT-type": "text/plain", @body body: Foo };
 
       @route("/test3")
-      @get
       op test3(): { @header "content-type": "application/json", @body body: Foo };
-    `
+    `,
   );
   expectDiagnosticEmpty(diagnostics);
   strictEqual(routes.length, 3);
@@ -144,7 +159,7 @@ it("empty response model becomes body if it has children", async () => {
         c: string;
       }
 
-    `
+    `,
   );
   expectDiagnosticEmpty(diagnostics);
   strictEqual(routes.length, 1);

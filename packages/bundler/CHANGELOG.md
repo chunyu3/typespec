@@ -1,5 +1,62 @@
 # Change Log - @typespec/bundler
 
+## 0.1.11
+
+No changes, version bump only.
+
+## 0.1.10
+
+No changes, version bump only.
+
+## 0.1.9
+
+### Bump dependencies
+
+- [#4679](https://github.com/microsoft/typespec/pull/4679) Upgrade dependencies - October 2024
+
+
+## 0.1.8
+
+### Bump dependencies
+
+- [#4424](https://github.com/microsoft/typespec/pull/4424) Bump dependencies
+
+
+## 0.1.7
+
+### Bug Fixes
+
+- [#4139](https://github.com/microsoft/typespec/pull/4139) Allow bundling libraries that don't import their `main` file from the TypeSpec
+
+
+## 0.1.6
+
+### Bump dependencies
+
+- [#3948](https://github.com/microsoft/typespec/pull/3948) Update dependencies
+
+
+## 0.1.5
+
+### Bump dependencies
+
+- [#3718](https://github.com/microsoft/typespec/pull/3718) Dependency updates July 2024
+
+
+## 0.1.4
+
+### Bump dependencies
+
+- [#3401](https://github.com/microsoft/typespec/pull/3401) Update dependencies - May 2024
+
+
+## 0.1.3
+
+### Bump dependencies
+
+- [#3169](https://github.com/microsoft/typespec/pull/3169) Update dependencies
+
+
 ## 0.1.2
 
 ### Bump dependencies
