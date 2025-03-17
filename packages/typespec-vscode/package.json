@@ -242,6 +242,7 @@
     "@rollup/plugin-commonjs": "~28.0.2",
     "@rollup/plugin-node-resolve": "~16.0.0",
     "@rollup/plugin-typescript": "~12.1.0",
+    "@rollup/plugin-json": "~6.1.0",
     "@types/mocha": "^10.0.9",
     "@types/node": "~22.10.10",
     "@types/semver": "^7.5.8",

@@ -1,4 +1,5 @@
 import commonjs from "@rollup/plugin-commonjs";
+import json from "@rollup/plugin-json";
 import resolve from "@rollup/plugin-node-resolve";
 import typescript from "@rollup/plugin-typescript";
 import { dirname } from "path";
@@ -35,20 +36,20 @@ export default defineConfig([
     ...baseConfig,
     input: "src/extension.ts",
     output: {
-      file: "dist/src/extension.cjs",
-      format: "commonjs",
+      file: "dist/src/extension.js",
+      format: "es",
       sourcemap: true,
       exports: "named",
       inlineDynamicImports: true,
     },
-    plugins: [...plugins, ts("dist/src")],
+    plugins: [...plugins, ts("dist/src"), (json as any)()],
   },
   {
     ...baseConfig,
     input: "src/web/extension.ts",
     output: {
       file: "dist/src/web/extension.js", // VSCode web will add extra .js if you use .cjs
-      format: "commonjs",
+      format: "es",
       sourcemap: true,
       inlineDynamicImports: true,
     },
@@ -59,11 +60,11 @@ export default defineConfig([
     input: "test/web/suite.ts",
     output: {
       file: "dist/test/web/suite.js", // VSCode web will add extra .js if you use .cjs
-      format: "commonjs",
+      format: "es",
       sourcemap: true,
       inlineDynamicImports: true,
     },
-    plugins: [...plugins, ts("dist/test/web")],
+    plugins: [...plugins, ts("dist/test/web"), (json as any)()],
   },
 ]);
 

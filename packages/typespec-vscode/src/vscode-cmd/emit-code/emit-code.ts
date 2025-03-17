@@ -1,3 +1,4 @@
+import { NodeHost, resolveCompilerOptions } from "@typespec/compiler";
 import { readFile, writeFile } from "fs/promises";
 import path from "path";
 import vscode, { QuickInputButton, Uri } from "vscode";
@@ -348,6 +349,12 @@ async function doEmit(mainTspFile: string, emitters: Emitter[]) {
       } else {
         configYaml.set("emit", [emitter.package]);
       }
+      const [compilerOptions] = await resolveCompilerOptions(NodeHost, {
+        cwd: baseDir,
+        entrypoint: mainTspFile,
+        configPath: tspConfigFile,
+      });
+      logger.debug(`compilerOptions: ${JSON.stringify(compilerOptions)}`);
       const emitOutputDir = configYaml.getIn(["options", emitter.package, "emitter-output-dir"]);
       if (!emitOutputDir) {
         configYaml.setIn(
