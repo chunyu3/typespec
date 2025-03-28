@@ -462,10 +462,9 @@ async function doEmit(
           return ResultCode.Success;
         }
       } catch (err: any) {
-        if (typeof err === "object" && "stdout" in err && "stderr" in err && `error` in err) {
-          const execOutput = err as ExecOutput;
+        if (typeof err === "object") {
           const details = [];
-          if (execOutput.error) details.push(execOutput.error);
+          if (err.error) details.push(err.error);
           logger.error(`Emitting ${codeInfoStr}...Failed.`, details, {
             showOutput: true,
             showPopup: true,
@@ -752,7 +751,7 @@ async function compile(
   cli: Executable,
   startFile: string,
   emitters: { name: string; options: Record<string, string> }[],
-): Promise<ExecOutput> {
+): Promise<{exitCode:number, error?: string}> {
   const args: string[] = cli.args ?? [];
   args.push("compile");
   args.push(startFile);
@@ -768,8 +767,6 @@ async function compile(
   }
 
   return new Promise((resolve, reject) => {
-    // const terminal = vscode.window.createTerminal("emit code");
-    // terminal.show();
     const compileTask = new vscode.Task(
       {
         type: "typespec",
@@ -790,36 +787,26 @@ async function compile(
       vscode.tasks.onDidEndTaskProcess((e) => {
         if (e.execution === execution) {
           logger.info(`Task completed!, arg: ${args.join(" ")}`);
-          vscode.window.showInformationMessage(`Task completed!, arg: ${args.join(" ")}`);
         }
         if (e.exitCode === 0) {
-          vscode.window.showInformationMessage('Task completed successfully!');
           resolve({
-            stdout: "",
-            stderr: "",
             exitCode: 0,
-            error: null,
-            spawnOptions: {
-              command: cli.command,
-              args: args,
-              cwd: getDirectoryPath(startFile),
-            },
-          } as ExecOutput);
+          });
         } else {
-          vscode.window.showErrorMessage(`Task failed with exit code ${e.exitCode}`);
           reject({
-            stdout:"",
-            stderr:"",
             exitCode: e.exitCode,
             error: `${cli.command} ${args.join(" ")} failed with exit code ${e.exitCode}`,
-            spawnOptions: {
-              command: cli.command,
-              args: args,
-              cwd: getDirectoryPath(startFile),
-            },
           });
         }
       });
-    });
+    },
+    (error) => {
+      logger.error('Failed to start task: ' + error.message);
+      reject({
+        exitCode: -1,
+        error: `Failed to start task: ${cli.command} ${args.join(" ")}. Error: ${error.message}`,
+      });
+    }
+  );
   });
 }
