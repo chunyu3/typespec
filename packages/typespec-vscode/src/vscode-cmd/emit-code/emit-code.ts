@@ -420,6 +420,10 @@ async function doEmit(
       cancellable: false,
     },
     async (): Promise<ResultCode> => {
+      const onPopupButtonClicked = () => {
+        /*TODO: need to get the terminal for the task. */
+        vscode.window.terminals[0]?.show();
+      };
       try {
         tel.lastStep = "Emit code";
         const generatePackageNameForTelemetry = (packageName: string): string => {
@@ -449,6 +453,7 @@ async function doEmit(
           logger.error(`Emitting ${codeInfoStr}...Failed`, [], {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
           });
           telemetryClient.logOperationDetailTelemetry(tel.activityId, {
             emitResult: `Emitting code failed: ${inspect(compileResult)}`,
@@ -458,6 +463,7 @@ async function doEmit(
           logger.info(`Emitting ${codeInfoStr}...Succeeded`, [], {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
           });
           return ResultCode.Success;
         }
@@ -468,11 +474,13 @@ async function doEmit(
           logger.error(`Emitting ${codeInfoStr}...Failed.`, details, {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
           });
         } else {
           logger.error(`Emitting ${codeInfoStr}...Failed.`, [err], {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
           });
         }
         telemetryClient.logOperationDetailTelemetry(tel.activityId, {
