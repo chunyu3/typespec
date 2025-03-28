@@ -444,7 +444,6 @@ async function doEmit(
           emitters.map((e) => {
             return { name: e.package, options: {} };
           }),
-          false,
         );
         if (compileResult.exitCode !== 0) {
           logger.error(`Emitting ${codeInfoStr}...Failed`, [], {
@@ -753,7 +752,6 @@ async function compile(
   cli: Executable,
   startFile: string,
   emitters: { name: string; options: Record<string, string> }[],
-  logPretty?: boolean,
 ): Promise<ExecOutput> {
   const args: string[] = cli.args ?? [];
   args.push("compile");
@@ -768,59 +766,60 @@ async function compile(
       }
     }
   }
-  // if (logPretty !== undefined) {
-  //   args.push("--pretty");
-  //   args.push(logPretty ? "true" : "false");
-  // }
 
-  // return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile), {
-  //   NO_COLOR: "true",
-  // });
   return new Promise((resolve, reject) => {
+    // const terminal = vscode.window.createTerminal("emit code");
+    // terminal.show();
     const compileTask = new vscode.Task(
-        {
-          type: "typespec",
-          path: startFile,
-          args: args,
-        },
-        vscode.TaskScope.Workspace,
-        "emit-code",
-        "tsp",
-       new vscode.ShellExecution(cli.command, args, { cwd: getDirectoryPath(startFile) })
-      );
-      vscode.tasks.executeTask(compileTask).then((execution) => {
-        vscode.tasks.onDidEndTaskProcess((e) => {
-          if (e.execution === execution) {
-              vscode.window.showInformationMessage('Task completed!');
-          }
-          if (e.exitCode === 0) {
-            vscode.window.showInformationMessage('Task completed successfully!');
-            resolve({
-              stdout: "",
-              stderr: "",
-              exitCode: 0,
-              error: null,
-              spawnOptions: {
-                command: cli.command,
-                args: args,
-                cwd: getDirectoryPath(startFile),
-              },
-            } as ExecOutput);
-          } else {
-            vscode.window.showErrorMessage(`Task failed with exit code ${e.exitCode}`);
-            reject({
-              stdout:"",
-              stderr:"",
-              exitCode: e.exitCode,
-              error: `${cli.command} ${args.join(" ")} failed with exit code ${e.exitCode}`,
-              spawnOptions: {
-                command: cli.command,
-                args: args,
-                cwd: getDirectoryPath(startFile),
-              },
-            });
-          }
-        });
+      {
+        type: "typespec",
+        path: startFile,
+        args: args,
+      },
+      vscode.TaskScope.Workspace,
+      `tsp compile ${startFile} ${args.join(" ")}`,
+      "tsp",
+      new vscode.ShellExecution(cli.command, args, { cwd: getDirectoryPath(startFile) })
+    );
+
+    compileTask.presentationOptions = {
+      panel: vscode.TaskPanelKind.New,
+    };
+
+    vscode.tasks.executeTask(compileTask).then((execution) => {
+      vscode.tasks.onDidEndTaskProcess((e) => {
+        if (e.execution === execution) {
+          logger.info(`Task completed!, arg: ${args.join(" ")}`);
+          vscode.window.showInformationMessage(`Task completed!, arg: ${args.join(" ")}`);
+        }
+        if (e.exitCode === 0) {
+          vscode.window.showInformationMessage('Task completed successfully!');
+          resolve({
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+            error: null,
+            spawnOptions: {
+              command: cli.command,
+              args: args,
+              cwd: getDirectoryPath(startFile),
+            },
+          } as ExecOutput);
+        } else {
+          vscode.window.showErrorMessage(`Task failed with exit code ${e.exitCode}`);
+          reject({
+            stdout:"",
+            stderr:"",
+            exitCode: e.exitCode,
+            error: `${cli.command} ${args.join(" ")} failed with exit code ${e.exitCode}`,
+            spawnOptions: {
+              command: cli.command,
+              args: args,
+              cwd: getDirectoryPath(startFile),
+            },
+          });
+        }
       });
+    });
   });
 }
