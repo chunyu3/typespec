@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { readFile, writeFile } from "fs/promises";
 import path from "path";
 import { inspect } from "util";
-import vscode, { QuickInputButton, Uri } from "vscode";
+import vscode, { commands, QuickInputButton, Uri } from "vscode";
 import { Executable } from "vscode-languageclient/node.js";
 import { Document, isScalar, isSeq } from "yaml";
 import { StartFileName, TspConfigFileName } from "../../const.js";
@@ -14,13 +14,7 @@ import { OperationTelemetryEvent } from "../../telemetry/telemetry-event.js";
 import { resolveTypeSpecCli } from "../../tsp-executable-resolver.js";
 import { ResultCode } from "../../types.js";
 import { getEntrypointTspFile, TraverseMainTspFileInWorkspace } from "../../typespec-utils.js";
-import {
-  ExecOutput,
-  isFile,
-  spawnExecutionAndLogToOutput,
-  tryParseYaml,
-  tryReadFile,
-} from "../../utils.js";
+import { ExecOutput, isFile, tryParseYaml, tryReadFile } from "../../utils.js";
 import { EmitQuickPickItem } from "./emit-quick-pick-item.js";
 import {
   Emitter,
@@ -774,12 +768,59 @@ async function compile(
       }
     }
   }
-  if (logPretty !== undefined) {
-    args.push("--pretty");
-    args.push(logPretty ? "true" : "false");
-  }
+  // if (logPretty !== undefined) {
+  //   args.push("--pretty");
+  //   args.push(logPretty ? "true" : "false");
+  // }
 
-  return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile), {
-    NO_COLOR: "true",
+  // return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile), {
+  //   NO_COLOR: "true",
+  // });
+  return new Promise((resolve, reject) => {
+    const compileTask = new vscode.Task(
+        {
+          type: "typespec",
+          path: startFile,
+          args: args,
+        },
+        vscode.TaskScope.Workspace,
+        "emit-code",
+        "tsp",
+       new vscode.ShellExecution(cli.command, args, { cwd: getDirectoryPath(startFile) })
+      );
+      vscode.tasks.executeTask(compileTask).then((execution) => {
+        vscode.tasks.onDidEndTaskProcess((e) => {
+          if (e.execution === execution) {
+              vscode.window.showInformationMessage('Task completed!');
+          }
+          if (e.exitCode === 0) {
+            vscode.window.showInformationMessage('Task completed successfully!');
+            resolve({
+              stdout: "",
+              stderr: "",
+              exitCode: 0,
+              error: null,
+              spawnOptions: {
+                command: cli.command,
+                args: args,
+                cwd: getDirectoryPath(startFile),
+              },
+            } as ExecOutput);
+          } else {
+            vscode.window.showErrorMessage(`Task failed with exit code ${e.exitCode}`);
+            reject({
+              stdout:"",
+              stderr:"",
+              exitCode: e.exitCode,
+              error: `${cli.command} ${args.join(" ")} failed with exit code ${e.exitCode}`,
+              spawnOptions: {
+                command: cli.command,
+                args: args,
+                cwd: getDirectoryPath(startFile),
+              },
+            });
+          }
+        });
+      });
   });
 }
