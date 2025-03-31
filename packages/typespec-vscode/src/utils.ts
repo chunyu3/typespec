@@ -197,13 +197,18 @@ export function spawnExecutionAndLogToOutput(
   return spawnExecution(exe, args, cwd, env, {
     onStdioOut: (data) => {
       logger.info(data.trim());
+      // console.log(data.trim());
     },
     onStdioError: (error) => {
       logger.error(error.trim());
+      // console.log(error.trim());
     },
     onError: (error) => {
       if (error?.code === ERROR_CODE_ENOENT) {
         logger.error(`Cannot find ${exe} executable. Make sure it can be found in your path.`);
+        // console.error(`Cannot find ${exe} executable. Make sure it can be found in your path.`, [
+        //   error,
+        // ]);
       }
     },
   });

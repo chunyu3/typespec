@@ -6,6 +6,7 @@ import vscode, { commands, ExtensionContext, TabInputText } from "vscode";
 import { State } from "vscode-languageclient";
 import { createCodeActionProvider } from "./code-action-provider.js";
 import { ExtensionStateManager } from "./extension-state-manager.js";
+import { ConsoleLogLogger2 } from "./log/console-log-listener.js";
 import { ExtensionLogListener, getPopupAction } from "./log/extension-log-listener.js";
 import logger from "./log/logger.js";
 import { TypeSpecLogOutputChannel } from "./log/typespec-log-output-channel.js";
@@ -35,9 +36,37 @@ let client: TspLanguageClient | undefined;
  * More detail can be found at https://github.com/microsoft/vscode-discussions/discussions/1149
  */
 const outputChannel = new TypeSpecLogOutputChannel("TypeSpec");
+// logger.registerLogListener("extension-log", new ExtensionLogListener(outputChannel));
+// Access the launch.json configuration
+const config = vscode.workspace.getConfiguration("launch");
+
+// Modify the outputCapture option
+const updatedConfig = {
+  ...config,
+  configurations: config.configurations.map((cfg: any) => ({
+    ...cfg,
+    outputCapture: "std",
+  })),
+};
+
+// Update the launch.json configuration
+vscode.workspace
+  .getConfiguration()
+  .update("launch", updatedConfig, vscode.ConfigurationTarget.Workspace);
+
+// Create a new terminal
+const terminal = vscode.window.createTerminal("Log Terminal");
+terminal.show();
+terminal.sendText("This is a log message", false);
 logger.registerLogListener("extension-log", new ExtensionLogListener(outputChannel));
+// logger.registerLogListener("terminal-log", new TerminalLogListener(terminal));
+logger.registerLogListener("console-log", new ConsoleLogLogger2(console.log));
+
+// const terminal = vscode.window.createTerminal("TypeSpec");
 
 export async function activate(context: ExtensionContext) {
+  terminal.show();
+  terminal.sendText("Activating TypeSpec extension...", false);
   const stateManager = new ExtensionStateManager(context);
   telemetryClient.Initialize(stateManager);
   context.subscriptions.push(telemetryClient);

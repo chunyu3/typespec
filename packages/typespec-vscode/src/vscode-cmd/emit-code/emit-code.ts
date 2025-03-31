@@ -14,13 +14,7 @@ import { OperationTelemetryEvent } from "../../telemetry/telemetry-event.js";
 import { resolveTypeSpecCli } from "../../tsp-executable-resolver.js";
 import { ResultCode } from "../../types.js";
 import { getEntrypointTspFile, TraverseMainTspFileInWorkspace } from "../../typespec-utils.js";
-import {
-  ExecOutput,
-  isFile,
-  spawnExecutionAndLogToOutput,
-  tryParseYaml,
-  tryReadFile,
-} from "../../utils.js";
+import { ExecOutput, isFile, tryParseYaml, tryReadFile } from "../../utils.js";
 import { EmitQuickPickItem } from "./emit-quick-pick-item.js";
 import {
   Emitter,
@@ -776,12 +770,38 @@ async function compile(
       }
     }
   }
-  if (logPretty !== undefined) {
-    args.push("--pretty");
-    args.push(logPretty ? "true" : "false");
-  }
+  // if (logPretty !== undefined) {
+  //   args.push("--pretty");
+  //   args.push(logPretty ? "true" : "false");
+  // }
 
-  return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile), {
-    NO_COLOR: "true",
+  // return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile), {
+  //   NO_COLOR: "true",
+  // });
+  // const terminal = vscode.window.createTerminal("Emit Code");
+  // terminal.show();
+  // terminal.sendText(`${cli.command} ${args.join(" ")}`, true);
+  // return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile));
+  return new Promise((resolve, reject) => {
+    const terminal = vscode.window.createTerminal("Emit Code");
+    terminal.show();
+    terminal.sendText(`${cli.command} ${args.join(" ")}`, true);
+
+    const disposable = vscode.window.onDidCloseTerminal((closedTerminal) => {
+      if (closedTerminal === terminal) {
+        resolve({
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          error: null,
+          spawnOptions: {
+            command: cli.command,
+            args: args,
+            cwd: getDirectoryPath(startFile),
+          },
+        } as ExecOutput);
+        disposable.dispose();
+      }
+    });
   });
 }
