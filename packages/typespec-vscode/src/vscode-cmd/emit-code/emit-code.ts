@@ -14,13 +14,7 @@ import { OperationTelemetryEvent } from "../../telemetry/telemetry-event.js";
 import { resolveTypeSpecCli } from "../../tsp-executable-resolver.js";
 import { ResultCode } from "../../types.js";
 import { getEntrypointTspFile, TraverseMainTspFileInWorkspace } from "../../typespec-utils.js";
-import {
-  ExecOutput,
-  isFile,
-  spawnExecutionAndLogToOutput,
-  tryParseYaml,
-  tryReadFile,
-} from "../../utils.js";
+import { isFile, tryParseYaml, tryReadFile } from "../../utils.js";
 import { EmitQuickPickItem } from "./emit-quick-pick-item.js";
 import {
   Emitter,
@@ -32,6 +26,7 @@ import {
   PreDefinedEmitterPickItems,
 } from "./emitter.js";
 
+const typespecTerminal = vscode.window.createTerminal("TypeSpec");
 interface EmitQuickPickButton extends QuickInputButton {
   uri: string;
 }
@@ -426,6 +421,10 @@ async function doEmit(
       cancellable: false,
     },
     async (): Promise<ResultCode> => {
+      const onPopupButtonClicked = () => {
+        /*TODO: need to get the terminal for the task. */
+        typespecTerminal.show();
+      };
       try {
         tel.lastStep = "Emit code";
         const generatePackageNameForTelemetry = (packageName: string): string => {
@@ -450,12 +449,13 @@ async function doEmit(
           emitters.map((e) => {
             return { name: e.package, options: {} };
           }),
-          false,
         );
         if (compileResult.exitCode !== 0) {
           logger.error(`Emitting ${codeInfoStr}...Failed`, [], {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
+            popupButtonText: "View details",
           });
           telemetryClient.logOperationDetailTelemetry(tel.activityId, {
             emitResult: `Emitting code failed: ${inspect(compileResult)}`,
@@ -465,22 +465,27 @@ async function doEmit(
           logger.info(`Emitting ${codeInfoStr}...Succeeded`, [], {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
+            popupButtonText: "View details",
           });
           return ResultCode.Success;
         }
       } catch (err: any) {
-        if (typeof err === "object" && "stdout" in err && "stderr" in err && `error` in err) {
-          const execOutput = err as ExecOutput;
+        if (typeof err === "object") {
           const details = [];
-          if (execOutput.error) details.push(execOutput.error);
+          if (err.error) details.push(err.error);
           logger.error(`Emitting ${codeInfoStr}...Failed.`, details, {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
+            popupButtonText: "View details",
           });
         } else {
           logger.error(`Emitting ${codeInfoStr}...Failed.`, [err], {
             showOutput: true,
             showPopup: true,
+            onPopupButtonClicked: onPopupButtonClicked,
+            popupButtonText: "View details",
           });
         }
         telemetryClient.logOperationDetailTelemetry(tel.activityId, {
@@ -759,8 +764,7 @@ async function compile(
   cli: Executable,
   startFile: string,
   emitters: { name: string; options: Record<string, string> }[],
-  logPretty?: boolean,
-): Promise<ExecOutput> {
+): Promise<{ exitCode: number; error?: string }> {
   const args: string[] = cli.args ?? [];
   args.push("compile");
   args.push(startFile);
@@ -774,12 +778,23 @@ async function compile(
       }
     }
   }
-  if (logPretty !== undefined) {
-    args.push("--pretty");
-    args.push(logPretty ? "true" : "false");
-  }
 
-  return await spawnExecutionAndLogToOutput(cli.command, args, getDirectoryPath(startFile), {
-    NO_COLOR: "true",
+  typespecTerminal.show();
+  typespecTerminal.sendText(`${cli.command} ${args.join(" ")}`, true);
+  return new Promise((resolve, reject) => {
+    const dispose = vscode.window.onDidEndTerminalShellExecution((e) => {
+      if (e.terminal === typespecTerminal) {
+        if (e.exitCode === 0) {
+          resolve({
+            exitCode: e.exitCode,
+          });
+        } else {
+          reject({
+            exitCode: -1,
+            error: `${e.execution.commandLine} failed with exit code ${e.exitCode}`,
+          });
+        }
+      }
+    });
   });
 }
