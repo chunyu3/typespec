@@ -39,6 +39,37 @@ logger.registerLogListener("extension-log", new ExtensionLogListener(outputChann
 
 export async function activate(context: ExtensionContext) {
   const stateManager = new ExtensionStateManager(context);
+  const plugins = vscode.workspace.getConfiguration().get<string[]>(SettingName.Plugins);
+  for (const plugin of plugins ?? []) {
+    logger.info(`Loading plugin: ${plugin}`);
+    try {
+      // const pluginModule = await import(plugin);
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // const pluginModule = require(plugin);
+      // const path = require.resolve('typespec-vscode-azure');
+      // // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // const pluginModule = await require(path);
+      // if (pluginModule.activate) {
+      //   await pluginModule.activate(context, stateManager);
+      // }
+      // let pluginModule;
+      // if (typeof require !== "undefined") {
+      //   // eslint-disable-next-line @typescript-eslint/no-require-imports
+      //   pluginModule = require(plugin);
+      // } else {
+      //   pluginModule = await import(plugin);
+      // }
+
+      const pluginModule = await import(plugin);
+      if (pluginModule.activatePlugin) {
+        await pluginModule.activatePlugin(context, stateManager);
+      }
+
+      // activatePlugin(context);
+    } catch (e) {
+      logger.error(`Failed to load plugin: ${plugin}`, [e]);
+    }
+  }
   telemetryClient.Initialize(stateManager);
   context.subscriptions.push(telemetryClient);
 

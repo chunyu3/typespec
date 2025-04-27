@@ -5,3 +5,4 @@ packages:
   - "!packages/http-client-csharp/**"
   - "!packages/http-client-java/**"
   - "!packages/http-client-python/**"
+  - "!packages/typespec-vscode-plugin/**"

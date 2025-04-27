@@ -3,6 +3,7 @@ import { TspLanguageClient } from "./tsp-language-client.js";
 export const enum SettingName {
   TspServerPath = "typespec.tsp-server.path",
   InitTemplatesUrls = "typespec.initTemplatesUrls",
+  Plugins = "typespec.plugins",
 }
 
 export const enum CommandName {

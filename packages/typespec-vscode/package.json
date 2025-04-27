@@ -69,6 +69,17 @@
       {
         "title": "TypeSpec",
         "properties": {
+          "typespec.plugins": {
+            "type": "array",
+            "default": [
+              "typespec-vscode-plugin"
+            ],
+            "description": "List of TypeSpec plugins to load. The plugins are loaded in the order they are specified. The plugin name is the name of the package that contains the plugin. For example, if you have a plugin named 'my-plugin', you would specify it as 'my-plugin'.",
+            "scope": "machine-overridable",
+            "items": {
+              "type": "string"
+            }
+          },
           "typespec.tsp-server.path": {
             "type": "string",
             "default": "",
@@ -282,6 +293,7 @@
     "vitest": "^3.0.9",
     "vscode-languageclient": "~9.0.1",
     "which": "^5.0.0",
-    "yaml": "~2.7.0"
+    "yaml": "~2.7.0",
+    "typespec-vscode-plugin": "^0.68.2"
   }
 }

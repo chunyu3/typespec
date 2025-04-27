@@ -12,7 +12,8 @@
     "outDir": "dist",
     "skipLibCheck": true,
     "types": ["mocha"],
-    "rootDir": "."
+    "rootDir": ".",
+    "allowSyntheticDefaultImports": true,
   },
   "exclude": ["dist", "templates", "vitest.config.ts"]
 }

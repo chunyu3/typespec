@@ -19,7 +19,7 @@ const nodeContext = await context({
   target: "node22",
   format: "cjs",
   sourcemap: true,
-  external: ["vscode"],
+  external: ["vscode", "typespec-vscode-plugin"],
 });
 
 // Build the web extension
@@ -31,7 +31,7 @@ const webContext = await context({
   platform: "browser",
   format: "cjs",
   sourcemap: true,
-  external: ["vscode"],
+  external: ["vscode", "typespec-vscode-plugin"],
 });
 
 // Build the web test suite
@@ -42,7 +42,7 @@ const webTestContext = await context({
   mainFields: ["module", "main"], // app insights web https://www.npmjs.com/package/@microsoft/applicationinsights-web-basic uses module instead of exports...
   platform: "browser",
   format: "cjs",
-  external: ["vscode"],
+  external: ["vscode", "typespec-vscode-plugin"],
 });
 
 if (process.argv.includes("--watch")) {

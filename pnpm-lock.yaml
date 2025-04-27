@@ -2301,6 +2301,9 @@ importers:
       typescript:
         specifier: ~5.8.2
         version: 5.8.2
+      typespec-vscode-plugin:
+        specifier: ^0.68.2
+        version: 0.68.2(@types/debug@4.1.12)(happy-dom@17.4.4)(jsdom@25.0.1)(tslib@2.8.1)(tsx@4.19.3)
       vitest:
         specifier: ^3.0.9
         version: 3.0.9(@types/debug@4.1.12)(@types/node@22.13.13)(@vitest/ui@3.0.9)(happy-dom@17.4.4)(jsdom@25.0.1)(tsx@4.19.3)(yaml@2.7.0)
@@ -11991,6 +11994,10 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  typespec-vscode-plugin@0.68.2:
+    resolution: {integrity: sha512-AKilQhOZBnVFnyco6sRcstMJ/OaYCx8XiBwrVifjy43fdNCljfGBxtVMApYCugBD8P5iq+QaQx+oJfdSV2gYXw==}
+    engines: {vscode: ^1.98.0}
+
   typical@4.0.0:
     resolution: {integrity: sha512-VAH4IvQ7BDFYglMd7BPRDfLgxZZX4O4TFcRDA6EN5X7erNJJq+McIEp8np9aVtxrCJ6qx4GTYVfOWNjcqwZgRw==}
     engines: {node: '>=8'}
@@ -13304,7 +13311,7 @@ snapshots:
 
   '@astrojs/yaml2ts@0.2.2':
     dependencies:
-      yaml: 2.7.0
+      yaml: 2.7.1
 
   '@azure/abort-controller@2.1.2':
     dependencies:
@@ -19758,7 +19765,7 @@ snapshots:
     dependencies:
       '@cspell/cspell-types': 8.17.5
       comment-json: 4.2.5
-      yaml: 2.7.0
+      yaml: 2.7.1
 
   cspell-dictionary@8.17.5:
     dependencies:
@@ -25400,6 +25407,52 @@ snapshots:
       - supports-color
 
   typescript@5.8.2: {}
+
+  typespec-vscode-plugin@0.68.2(@types/debug@4.1.12)(happy-dom@17.4.4)(jsdom@25.0.1)(tslib@2.8.1)(tsx@4.19.3):
+    dependencies:
+      '@types/mocha': 10.0.10
+      '@types/node': 22.13.13
+      '@types/semver': 7.7.0
+      '@types/vscode': 1.98.0
+      '@types/which': 3.0.4
+      '@vitest/coverage-v8': 3.0.9(vitest@3.0.9)
+      '@vitest/ui': 3.0.9(vitest@3.0.9)
+      '@vscode/extension-telemetry': 0.9.8(tslib@2.8.1)
+      '@vscode/test-web': 0.0.67
+      '@vscode/vsce': 3.3.0
+      ajv: 8.17.1
+      c8: 10.1.3
+      esbuild: 0.25.1
+      mocha: 11.1.0
+      playwright: 1.51.1
+      rimraf: 6.0.1
+      semver: 7.7.1
+      swagger-ui-dist: 5.20.1
+      typescript: 5.8.2
+      vitest: 3.0.9(@types/debug@4.1.12)(@types/node@22.13.13)(@vitest/ui@3.0.9)(happy-dom@17.4.4)(jsdom@25.0.1)(tsx@4.19.3)(yaml@2.7.1)
+      vscode-languageclient: 9.0.1
+      which: 5.0.0
+      yaml: 2.7.1
+    transitivePeerDependencies:
+      - '@edge-runtime/vm'
+      - '@types/debug'
+      - '@vitest/browser'
+      - bare-buffer
+      - happy-dom
+      - jiti
+      - jsdom
+      - less
+      - lightningcss
+      - monocart-coverage-reports
+      - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+      - tslib
+      - tsx
 
   typical@4.0.0: {}
 
