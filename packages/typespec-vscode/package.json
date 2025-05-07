@@ -196,6 +196,11 @@
         "command": "typespec.showOpenApi3",
         "title": "Preview API Documentation",
         "category": "TypeSpec"
+      },
+      {
+        "command": "typespec.configureInitTemplate",
+        "title": "Configure Init Template",
+        "category": "TypeSpec"
       }
     ],
     "semanticTokenScopes": [

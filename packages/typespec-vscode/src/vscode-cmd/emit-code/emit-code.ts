@@ -1,3 +1,4 @@
+import { NodeHost, resolveCompilerOptions } from "@typespec/compiler";
 import { createHash } from "crypto";
 import { readFile, writeFile } from "fs/promises";
 import path from "path";
@@ -413,6 +414,12 @@ async function doEmit(
   } catch (error: any) {
     logger.error(error);
   }
+
+  const [compilerOptions] = await resolveCompilerOptions(NodeHost, {
+    cwd: baseDir,
+    entrypoint: mainTspFile,
+    configPath: tspConfigFile,
+  });
 
   const allCodesToGenerate = generations
     .map((g) => `${g.codeInfo} under directory ${g.outputDir}`)
