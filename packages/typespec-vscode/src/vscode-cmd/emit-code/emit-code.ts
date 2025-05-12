@@ -562,6 +562,42 @@ export async function emitCode(
 
   logger.info(`Emit from entrypoint file: ${tspProjectFile}`);
   const baseDir = getDirectoryPath(tspProjectFile);
+
+  /* NOTE: vscode only record the diagnostics for opened files. */
+  const compilerErrors = vscode.languages.getDiagnostics(vscode.Uri.file(baseDir));
+
+  const folderUri = vscode.Uri.file(baseDir);
+  const allDiagnostics: [vscode.Uri, vscode.Diagnostic[]][] = vscode.languages.getDiagnostics();
+
+  /* get all diagnostics in a folder. */
+  const folderDiagnostics = allDiagnostics
+    .filter(([uri, _]) => uri.fsPath.startsWith(folderUri.fsPath))
+    .map(([uri, diagnostics]) => diagnostics)
+    .flat();
+
+  const compilerError = vscode.languages
+    .getDiagnostics(vscode.Uri.file(tspProjectFile))
+    .filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+  if (compilerError.length > 0) {
+    logger.error(
+      `There are errors in ${tspProjectFile}. Please resolve those errors. Emitting Cancelled.`,
+      [],
+      {
+        showOutput: true,
+        showPopup: true,
+      },
+    );
+    tel.lastStep = "Check specification file";
+    return ResultCode.Cancelled;
+  }
+  // vscode.languages.getDiagnostics(vscode.Uri.file(tspProjectFile)).forEach((d) => {
+  //   if (d.severity === vscode.DiagnosticSeverity.Error) {
+  //     logger.error(`Error in ${tspProjectFile}: ${d.message}`, [], {
+  //       showOutput: true,
+  //       showPopup: true,
+  //     });
+  //   }
+  // });
   const tspConfigFile = path.join(baseDir, TspConfigFileName);
   let configYaml = tryParseYaml(""); //generate a empty yaml
   if (await isFile(tspConfigFile)) {
