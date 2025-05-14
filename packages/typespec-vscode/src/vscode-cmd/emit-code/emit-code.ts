@@ -509,6 +509,11 @@ export async function emitCode(
   tel: OperationTelemetryEvent,
 ): Promise<ResultCode> {
   let tspProjectFile: string = "";
+  if (!emitters || emitters.length === 0) {
+    logger.info("No predefined emitter.");
+  } else {
+    logger.info(`Predefined emitters: ${emitters.map((e) => e.package).join(", ")}`);
+  }
   if (!uri) {
     const targetPathes = await TraverseMainTspFileInWorkspace();
     logger.info(`Found ${targetPathes.length} ${StartFileName} files`);
@@ -627,7 +632,7 @@ export async function emitCode(
       picked: false,
     };
     const existingEmitterQuickPickItems = existingEmitters.map((e) => {
-      const emitter = getRegisterEmittersByPackage(e);
+      const emitter = getRegisterEmittersByPackage(e, emitters);
       if (emitter) {
         return toEmitterQuickPickItem(emitter);
       } else {
