@@ -25,6 +25,7 @@ import {
 import { isWhitespaceStringOrUndefined } from "./utils.js";
 import { createTypeSpecProject } from "./vscode-cmd/create-tsp-project.js";
 import { emitCode } from "./vscode-cmd/emit-code/emit-code.js";
+import { Emitter } from "./vscode-cmd/emit-code/emitter.js";
 import { importFromOpenApi3 } from "./vscode-cmd/import-from-openapi3.js";
 import { installCompilerGlobally } from "./vscode-cmd/install-tsp-compiler.js";
 import { clearOpenApi3PreviewTempFolders, showOpenApi3 } from "./vscode-cmd/openapi3-preview.js";
@@ -64,7 +65,7 @@ export async function activate(context: ExtensionContext) {
 
   /* emit command. */
   context.subscriptions.push(
-    commands.registerCommand(CommandName.EmitCode, async (uri: vscode.Uri) => {
+    commands.registerCommand(CommandName.EmitCode, async (uri: vscode.Uri, emitters: Emitter[]) => {
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Window,
@@ -75,7 +76,7 @@ export async function activate(context: ExtensionContext) {
           await telemetryClient.doOperationWithTelemetry<ResultCode>(
             TelemetryEventName.EmitCode,
             async (tel): Promise<ResultCode> => {
-              return await emitCode(context, uri, tel);
+              return await emitCode(emitters, context, uri, tel);
             },
           );
         },

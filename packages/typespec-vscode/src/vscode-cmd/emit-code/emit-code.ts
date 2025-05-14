@@ -36,8 +36,11 @@ interface EmitQuickPickButton extends QuickInputButton {
   uri: string;
 }
 
-async function configureEmitter(context: vscode.ExtensionContext): Promise<Emitter | undefined> {
-  const emitterKinds = getRegisterEmitterTypes();
+async function configureEmitter(
+  context: vscode.ExtensionContext,
+  emtters?: Emitter[],
+): Promise<Emitter | undefined> {
+  const emitterKinds = getRegisterEmitterTypes(emtters);
   const toEmitterTypeQuickPickItem = (kind: EmitterKind): any => {
     const registerEmitters = getRegisterEmitters(kind);
     const supportedLanguages = registerEmitters.map((e) => e.language).join(", ");
@@ -500,6 +503,7 @@ async function doEmit(
 }
 
 export async function emitCode(
+  emitters: Emitter[],
   context: vscode.ExtensionContext,
   uri: vscode.Uri,
   tel: OperationTelemetryEvent,
@@ -699,7 +703,7 @@ export async function emitCode(
       existingEmittersSelector.onDidAccept(async () => {
         const selectedItem = existingEmittersSelector.selectedItems[0];
         if (selectedItem === newEmitterQuickPickItem) {
-          const newEmitter = await configureEmitter(context);
+          const newEmitter = await configureEmitter(context, emitters);
           if (!newEmitter) {
             resolve([]);
           } else {
@@ -750,7 +754,7 @@ export async function emitCode(
       tel,
     );
   } else {
-    const selectedEmitter = await configureEmitter(context);
+    const selectedEmitter = await configureEmitter(context, emitters);
     logger.info(`Selected emitter: ${selectedEmitter?.package}`);
     if (selectedEmitter) {
       return await doEmit(tspProjectFile, [selectedEmitter], tel);

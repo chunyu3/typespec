@@ -114,13 +114,18 @@ export function getRegisterEmitters(kind: EmitterKind): ReadonlyArray<Emitter> {
     .filter((emitter) => emitter !== undefined) as Emitter[];
 }
 
-export function getRegisterEmitterTypes(): ReadonlyArray<EmitterKind> {
-  const emitters: ReadonlyArray<Emitter> = PreDefinedEmitters;
+export function getRegisterEmitterTypes(
+  predefinedEmitters?: Emitter[],
+): ReadonlyArray<EmitterKind> {
+  const emitters: ReadonlyArray<Emitter> = predefinedEmitters ?? PreDefinedEmitters;
   return Array.from(new Set(emitters.map((emitter) => emitter.kind)));
 }
 
-export function getRegisterEmittersByPackage(packageName: string): Emitter | undefined {
-  const emitters: ReadonlyArray<Emitter> = PreDefinedEmitters;
+export function getRegisterEmittersByPackage(
+  packageName: string,
+  predefinedEmitters?: Emitter[],
+): Emitter | undefined {
+  const emitters: ReadonlyArray<Emitter> = predefinedEmitters ?? PreDefinedEmitters;
   return emitters.find(
     (emitter) => emitter.package === packageName || emitter.package.startsWith(packageName + "@"),
   );
