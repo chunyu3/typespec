@@ -106,8 +106,11 @@ function getEmitter(kind: EmitterKind, emitter: Emitter): Emitter | undefined {
   };
 }
 
-export function getRegisterEmitters(kind: EmitterKind): ReadonlyArray<Emitter> {
-  const emitters: ReadonlyArray<Emitter> = PreDefinedEmitters;
+export function getRegisterEmitters(
+  kind: EmitterKind,
+  predefinedEmitters?: Emitter[],
+): ReadonlyArray<Emitter> {
+  const emitters: ReadonlyArray<Emitter> = predefinedEmitters ?? PreDefinedEmitters;
   return emitters
     .filter((emitter) => emitter.kind === kind)
     .map((emitter) => getEmitter(kind, emitter))
