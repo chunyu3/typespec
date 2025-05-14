@@ -38,9 +38,9 @@ interface EmitQuickPickButton extends QuickInputButton {
 
 async function configureEmitter(
   context: vscode.ExtensionContext,
-  emtters?: Emitter[],
+  emitters?: Emitter[],
 ): Promise<Emitter | undefined> {
-  const emitterKinds = getRegisterEmitterTypes(emtters);
+  const emitterKinds = getRegisterEmitterTypes(emitters);
   const toEmitterTypeQuickPickItem = (kind: EmitterKind): any => {
     const registerEmitters = getRegisterEmitters(kind);
     const supportedLanguages = registerEmitters.map((e) => e.language).join(", ");
@@ -101,7 +101,7 @@ async function configureEmitter(
     };
   };
 
-  const registerEmitters = getRegisterEmitters(codeType.emitterKind);
+  const registerEmitters = getRegisterEmitters(codeType.emitterKind, emitters);
   const all: EmitQuickPickItem[] = [...registerEmitters].map((e) => toQuickPickItem(e));
 
   const emitterSelector = vscode.window.createQuickPick<EmitQuickPickItem>();
