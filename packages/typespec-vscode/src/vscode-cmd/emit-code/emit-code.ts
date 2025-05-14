@@ -101,7 +101,7 @@ async function configureEmitter(
     };
   };
 
-  const registerEmitters = getRegisterEmitters(codeType.emitterKind);
+  const registerEmitters = getRegisterEmitters(codeType.emitterKind, emitters);
   const all: EmitQuickPickItem[] = [...registerEmitters].map((e) => toQuickPickItem(e));
 
   const emitterSelector = vscode.window.createQuickPick<EmitQuickPickItem>();
