@@ -219,6 +219,10 @@ export async function activate(context: ExtensionContext) {
   }
   showStartUpMessages(stateManager);
   telemetryClient.sendDelayedTelemetryEvents();
+  return {
+    lspClient: client,
+    emitCodeFunc: emitCode,
+  };
 }
 
 export async function deactivate() {
