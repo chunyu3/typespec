@@ -4,7 +4,7 @@ import path from "path";
 import { inspect } from "util";
 import vscode, { QuickInputButton, Uri } from "vscode";
 import { Document, isScalar, isSeq } from "yaml";
-import { StartFileName, TspConfigFileName } from "../../const.js";
+import { TspConfigFileName } from "../../const.js";
 import { tspLanguageClient } from "../../extension-context.js";
 import logger from "../../log/logger.js";
 import { InstallAction, npmDependencyType, NpmUtil } from "../../npm-utils.js";
@@ -543,6 +543,7 @@ export async function emitCode(
   context: vscode.ExtensionContext,
   uri: vscode.Uri,
   tel: OperationTelemetryEvent,
+  getEntrypointTspFilesFunc?: (uri: vscode.Uri) => Promise<string[]>,
 ): Promise<ResultCode> {
   let tspProjectFile: string = "";
   if (!emitters || emitters.length === 0) {
@@ -550,59 +551,61 @@ export async function emitCode(
   } else {
     logger.info(`Predefined emitters: ${emitters.map((e) => e.package).join(", ")}`);
   }
-  if (!uri) {
-    const targetPathes = await TraverseMainTspFileInWorkspace();
-    logger.info(`Found ${targetPathes.length} ${StartFileName} files`);
-    if (targetPathes.length === 0) {
-      logger.info(`No entrypoint file (${StartFileName}) found. Emitting Cancelled.`, [], {
-        showOutput: true,
-        showPopup: true,
-      });
-      tel.lastStep = "Check entrypoint file without uri";
-      return ResultCode.Cancelled;
-    } else if (targetPathes.length === 1) {
-      tspProjectFile = targetPathes[0];
-    } else {
-      const toProjectPickItem = (filePath: string): any => {
-        return {
-          label: `Project: ${filePath}`,
-          path: filePath,
-          iconPath: {
-            light: Uri.file(context.asAbsolutePath(`./icons/tsp-file.light.svg`)),
-            dark: Uri.file(context.asAbsolutePath(`./icons/tsp-file.dark.svg`)),
-          },
-        };
-      };
-      const typespecProjectQuickPickItems: any[] = targetPathes.map((filePath) =>
-        toProjectPickItem(filePath),
-      );
-      const selectedProjectFile = await vscode.window.showQuickPick(typespecProjectQuickPickItems, {
-        title: "Emit from TypeSpec",
-        canPickMany: false,
-        placeHolder: "Select a project",
-        ignoreFocusOut: true,
-      });
-      if (!selectedProjectFile) {
-        logger.info("No project selected. Emitting Cancelled.", [], {
-          showOutput: true,
-          showPopup: true,
-        });
-        tel.lastStep = "Select project for entrypoint";
-        return ResultCode.Cancelled;
-      }
-      tspProjectFile = selectedProjectFile.path;
+  if (getEntrypointTspFilesFunc) {
+    logger.info("Using custom entrypoint file finder.");
+    const customEntrypointTspFiles = await getEntrypointTspFilesFunc(uri);
+    if (customEntrypointTspFiles && customEntrypointTspFiles.length > 0) {
+      logger.info(`Custom entrypoint files: ${customEntrypointTspFiles.join(", ")}`);
     }
   } else {
-    const tspStartFile = await getEntrypointTspFile(uri.fsPath);
-    if (!tspStartFile) {
-      logger.info(`No entrypoint file (${StartFileName}). Invalid TypeSpec project.`, [], {
+    logger.info("Using default entrypoint file finder.");
+    const defaultEntrypointTspFiles = await TraverseMainTspFileInWorkspace();
+    if (defaultEntrypointTspFiles && defaultEntrypointTspFiles.length > 0) {
+      logger.info(`Default entrypoint files: ${defaultEntrypointTspFiles.join(", ")}`);
+    }
+  }
+  const targetTspFiles = getEntrypointTspFilesFunc
+    ? await getEntrypointTspFilesFunc(uri)
+    : await getEntrypointTspFiles(uri);
+  if (!targetTspFiles || targetTspFiles.length === 0) {
+    logger.info("No entrypoint file found. Emitting Cancelled.", [], {
+      showOutput: true,
+      showPopup: true,
+    });
+    tel.lastStep = "Check entrypoint file";
+    return ResultCode.Cancelled;
+  }
+  if (targetTspFiles.length === 1) {
+    tspProjectFile = targetTspFiles[0];
+  } else {
+    const toProjectPickItem = (filePath: string): any => {
+      return {
+        label: `Project: ${filePath}`,
+        path: filePath,
+        iconPath: {
+          light: Uri.file(context.asAbsolutePath(`./icons/tsp-file.light.svg`)),
+          dark: Uri.file(context.asAbsolutePath(`./icons/tsp-file.dark.svg`)),
+        },
+      };
+    };
+    const typespecProjectQuickPickItems: any[] = targetTspFiles.map((filePath) =>
+      toProjectPickItem(filePath),
+    );
+    const selectedProjectFile = await vscode.window.showQuickPick(typespecProjectQuickPickItems, {
+      title: "Emit from TypeSpec",
+      canPickMany: false,
+      placeHolder: "Select a project",
+      ignoreFocusOut: true,
+    });
+    if (!selectedProjectFile) {
+      logger.info("No project selected. Emitting Cancelled.", [], {
         showOutput: true,
         showPopup: true,
       });
-      tel.lastStep = "Check entrypoint file with uri";
+      tel.lastStep = "Select project for entrypoint";
       return ResultCode.Cancelled;
     }
-    tspProjectFile = tspStartFile;
+    tspProjectFile = selectedProjectFile.path;
   }
 
   logger.info(`Emit from entrypoint file: ${tspProjectFile}`);
@@ -803,6 +806,19 @@ export async function emitCode(
       logger.info("No emitter selected. Emitting Cancelled.");
       tel.lastStep = "Select configured emitters";
       return ResultCode.Cancelled;
+    }
+  }
+}
+
+async function getEntrypointTspFiles(uri: vscode.Uri): Promise<string[] | undefined> {
+  if (!uri) {
+    return await TraverseMainTspFileInWorkspace();
+  } else {
+    const tspFile = await getEntrypointTspFile(uri.fsPath);
+    if (tspFile) {
+      return [tspFile];
+    } else {
+      return undefined;
     }
   }
 }

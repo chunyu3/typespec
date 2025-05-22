@@ -77,7 +77,11 @@ export async function activate(context: ExtensionContext) {
       context.subscriptions.push(
         commands.registerCommand(
           CommandName.EmitCode,
-          async (uri: vscode.Uri, emitters: Emitter[] | undefined) => {
+          async (
+            uri: vscode.Uri,
+            emitters: Emitter[] | undefined,
+            getEntrypointTspFilesFunc?: (uri: vscode.Uri) => Promise<string[]>,
+          ) => {
             await vscode.window.withProgress(
               {
                 location: vscode.ProgressLocation.Window,
@@ -88,7 +92,7 @@ export async function activate(context: ExtensionContext) {
                 await telemetryClient.doOperationWithTelemetry<ResultCode>(
                   TelemetryEventName.EmitCode,
                   async (tel): Promise<ResultCode> => {
-                    return await emitCode(emitters, context, uri, tel);
+                    return await emitCode(emitters, context, uri, tel, getEntrypointTspFilesFunc);
                   },
                 );
               },
