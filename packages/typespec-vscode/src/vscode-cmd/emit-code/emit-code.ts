@@ -151,6 +151,7 @@ async function configureEmitter(
 
 async function doEmit(
   mainTspFile: string,
+  resolvedOutputDir: string,
   emitters: Emitter[],
   tel: OperationTelemetryEvent,
 ): Promise<ResultCode> {
@@ -402,6 +403,10 @@ async function doEmit(
       } else {
         outputDir = emitOutputDir as string;
       }
+      outputDir = outputDir
+        .replace("{project-root}", baseDir)
+        .replace("{output-dir}", `${baseDir}/tsp-output`)
+        .replace("{emitter-name}", emitter.package);
       let codeInfoStr: string = "code";
       if (emitter.kind !== EmitterKind.Unknown) {
         codeInfoStr = `${emitter.kind} code`;
@@ -409,11 +414,11 @@ async function doEmit(
       if (emitter.language) {
         codeInfoStr += ` for ${emitter.language}`;
       }
-      outputDir = outputDir
-        .replace("{project-root}", baseDir)
-        .replace("{output-dir}", `${baseDir}/tsp-output`)
-        .replace("{emitter-name}", emitter.package);
-      generations.push({ emitter: emitter, outputDir: outputDir, codeInfo: codeInfoStr });
+      generations.push({
+        emitter: emitter,
+        outputDir: resolvedOutputDir ?? outputDir,
+        codeInfo: codeInfoStr,
+      });
     }
     const newYamlContent = configYaml.toString();
     await writeFile(tspConfigFile, newYamlContent);
@@ -467,7 +472,10 @@ async function doEmit(
           {
             uri: getVscodeUriFromPath(mainTspFile),
           },
-          { emit: emitters.map((e) => e.package) },
+          {
+            emit: emitters.map((e) => e.package),
+            outputDir: resolvedOutputDir ?? undefined, // use the resolved output dir if provided
+          },
         );
         if (!compileResult) {
           logger.error(`Emitting ${codeInfoStr}...Failed.`, [], {
@@ -544,6 +552,7 @@ export async function emitCode(
   uri: vscode.Uri,
   tel: OperationTelemetryEvent,
   getEntrypointTspFilesFunc?: (uri: vscode.Uri) => Promise<string[]>,
+  resolveOutputDir?: (uri: vscode.Uri) => string,
 ): Promise<ResultCode> {
   let tspProjectFile: string = "";
   if (!emitters || emitters.length === 0) {
@@ -609,6 +618,7 @@ export async function emitCode(
   }
 
   logger.info(`Emit from entrypoint file: ${tspProjectFile}`);
+  const outputDir = resolveOutputDir ? resolveOutputDir(uri) : "{tsp-output}/{emitter-name}";
   const baseDir = getDirectoryPath(tspProjectFile);
   const tspConfigFile = path.join(baseDir, TspConfigFileName);
   let configYaml = tryParseYaml(""); //generate a empty yaml
@@ -784,9 +794,9 @@ export async function emitCode(
       return ResultCode.Cancelled;
     }
     logger.info(`Selected emitters: ${selectedExistingEmitters.map((e) => e.package).join(", ")}`);
-
     return await doEmit(
       tspProjectFile,
+      outputDir,
       selectedExistingEmitters.map(
         (e) =>
           getRegisterEmittersByPackage(e.package) ?? {
@@ -801,7 +811,7 @@ export async function emitCode(
     const selectedEmitter = await configureEmitter(context, emitters);
     logger.info(`Selected emitter: ${selectedEmitter?.package}`);
     if (selectedEmitter) {
-      return await doEmit(tspProjectFile, [selectedEmitter], tel);
+      return await doEmit(tspProjectFile, outputDir, [selectedEmitter], tel);
     } else {
       logger.info("No emitter selected. Emitting Cancelled.");
       tel.lastStep = "Select configured emitters";

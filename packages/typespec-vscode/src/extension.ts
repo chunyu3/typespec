@@ -5,14 +5,14 @@ import "./pre-extension-activate.js";
 import vscode, { commands, ExtensionContext, TabInputText } from "vscode";
 import { State } from "vscode-languageclient";
 import { createCodeActionProvider } from "./code-action-provider.js";
-import { setTspLanguageClient, tspLanguageClient } from "./extension-context.js";
+import { registedTemplates, setTspLanguageClient, tspLanguageClient } from "./extension-context.js";
 import { ExtensionStateManager } from "./extension-state-manager.js";
 import { ExtensionLogListener, getPopupAction } from "./log/extension-log-listener.js";
 import logger from "./log/logger.js";
 import { TypeSpecLogOutputChannel } from "./log/typespec-log-output-channel.js";
 import { getDirectoryPath, normalizePath } from "./path-utils.js";
 import { createTaskProvider } from "./task-provider.js";
-import telemetryClient from "./telemetry/telemetry-client.js";
+import telemetryClient, { TelemetryClient } from "./telemetry/telemetry-client.js";
 import { OperationTelemetryEvent, TelemetryEventName } from "./telemetry/telemetry-event.js";
 import { TspLanguageClient } from "./tsp-language-client.js";
 import {
@@ -26,7 +26,7 @@ import {
 } from "./types.js";
 import { installCompilerWithUi } from "./typespec-utils.js";
 import { isWhitespaceStringOrUndefined } from "./utils.js";
-import { createTypeSpecProject } from "./vscode-cmd/create-tsp-project.js";
+import { createTypeSpecProject, InitTemplatesUrlSetting } from "./vscode-cmd/create-tsp-project.js";
 import { emitCode } from "./vscode-cmd/emit-code/emit-code.js";
 import { Emitter } from "./vscode-cmd/emit-code/emitter.js";
 import { importFromOpenApi3 } from "./vscode-cmd/import-from-openapi3.js";
@@ -74,6 +74,7 @@ export async function activate(context: ExtensionContext) {
       );
 
       /* emit command. */
+      // if (!azureExtensionInstalled) {
       context.subscriptions.push(
         commands.registerCommand(
           CommandName.EmitCode,
@@ -100,6 +101,7 @@ export async function activate(context: ExtensionContext) {
           },
         ),
       );
+      // }
 
       context.subscriptions.push(
         commands.registerCommand(
@@ -296,8 +298,18 @@ export async function activate(context: ExtensionContext) {
     },
   );
   return {
+    context: context,
     lspClient: tspLanguageClient,
     emitCodeFunc: emitCode,
+    registerTemplate: (template: InitTemplatesUrlSetting) => {
+      if (registedTemplates.find((t) => t.name === template.name)) {
+        logger.warning(`Template with name "${template.name}" is already registered.`);
+        return;
+      }
+      registedTemplates.push(template);
+    },
+    logger: logger,
+    telemetryClient: new TelemetryClient(),
   };
 }
 
