@@ -14,7 +14,6 @@ import * as semver from "semver";
 import { inspect } from "util";
 import vscode, { ExtensionContext, QuickPickItem } from "vscode";
 import pkgJson from "../../package.json" with { type: "json" };
-import { registedTemplates } from "../extension-context";
 import { ExtensionStateManager } from "../extension-state-manager.js";
 import logger from "../log/logger.js";
 import {
@@ -646,10 +645,9 @@ async function loadInitTemplates(
         })),
     );
   }
-  // const settings = vscode.workspace
-  //   .getConfiguration()
-  //   .get<InitTemplatesUrlSetting[]>(SettingName.InitTemplatesUrls);
-  const settings = registedTemplates;
+  const settings = vscode.workspace
+    .getConfiguration()
+    .get<InitTemplatesUrlSetting[]>(SettingName.InitTemplatesUrls);
   if (settings) {
     logger.info("Loading init templates from config...");
     const loadFromConfig = async () => {
