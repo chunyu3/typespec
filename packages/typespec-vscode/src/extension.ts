@@ -27,7 +27,12 @@ import {
 import { installCompilerWithUi } from "./typespec-utils.js";
 import { isWhitespaceStringOrUndefined } from "./utils.js";
 import { createTypeSpecProject } from "./vscode-cmd/create-tsp-project.js";
-import { emitCode } from "./vscode-cmd/emit-code/emit-code.js";
+import {
+  chooseTspProjectFile,
+  doEmit,
+  emitCode,
+  selectEmitters,
+} from "./vscode-cmd/emit-code/emit-code.js";
 import { Emitter } from "./vscode-cmd/emit-code/emitter.js";
 import { importFromOpenApi3 } from "./vscode-cmd/import-from-openapi3.js";
 import { installCompilerGlobally } from "./vscode-cmd/install-tsp-compiler.js";
@@ -300,7 +305,9 @@ export async function activate(context: ExtensionContext) {
   return {
     context: context,
     lspClient: tspLanguageClient,
-    emitCodeFunc: emitCode,
+    chooseTspProjectFile: chooseTspProjectFile,
+    selectEmitter: selectEmitters,
+    emitCode: doEmit,
     logger: logger,
     telemetryClient: new TelemetryClient(),
   };

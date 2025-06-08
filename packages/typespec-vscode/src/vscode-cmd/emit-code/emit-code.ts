@@ -149,7 +149,7 @@ async function configureEmitter(
   };
 }
 
-async function doEmit(
+export async function doEmit(
   mainTspFile: string,
   emitters: Emitter[],
   tel: OperationTelemetryEvent,
@@ -386,7 +386,7 @@ async function doEmit(
           logger.error(err);
           outputDir = undefined;
         } finally {
-          if (!outputDir) {
+          if (outputDir === undefined) {
             logger.error("Cannot resolve emitter output dir. Emitting Cancelled.", [], {
               showOutput: true,
               showPopup: true,
@@ -496,9 +496,11 @@ async function doEmit(
         const emitterOptions: Record<string, {}> = {};
         if (resolvedOutputDirFunc) {
           for (const gen of generations) {
-            emitterOptions[gen.emitter.package] = {
-              "emitter-output-dir": gen.outputDir,
-            };
+            if (gen.outputDir.length > 0) {
+              emitterOptions[gen.emitter.package] = {
+                "emitter-output-dir": gen.outputDir,
+              };
+            }
           }
         }
         const compileResult = await tspLanguageClient.compileProject(
@@ -591,12 +593,99 @@ export async function emitCode(
     outputDir?: string,
   ) => Promise<string>,
 ): Promise<ResultCode> {
-  let tspProjectFile: string = "";
-  if (!emitters || emitters.length === 0) {
-    logger.info("No predefined emitter.");
-  } else {
-    logger.info(`Predefined emitters: ${emitters.map((e) => e.package).join(", ")}`);
+  // let tspProjectFile: string = "";
+  // if (!emitters || emitters.length === 0) {
+  //   logger.info("No predefined emitter.");
+  // } else {
+  //   logger.info(`Predefined emitters: ${emitters.map((e) => e.package).join(", ")}`);
+  // }
+  // if (getEntrypointTspFilesFunc) {
+  //   logger.info("Using custom entrypoint file finder.");
+  //   const customEntrypointTspFiles = await getEntrypointTspFilesFunc(uri);
+  //   if (customEntrypointTspFiles && customEntrypointTspFiles.length > 0) {
+  //     logger.info(`Custom entrypoint files: ${customEntrypointTspFiles.join(", ")}`);
+  //   }
+  // } else {
+  //   logger.info("Using default entrypoint file finder.");
+  //   const defaultEntrypointTspFiles = await TraverseMainTspFileInWorkspace();
+  //   if (defaultEntrypointTspFiles && defaultEntrypointTspFiles.length > 0) {
+  //     logger.info(`Default entrypoint files: ${defaultEntrypointTspFiles.join(", ")}`);
+  //   }
+  // }
+  // const targetTspFiles = getEntrypointTspFilesFunc
+  //   ? await getEntrypointTspFilesFunc(uri)
+  //   : await getEntrypointTspFiles(uri);
+  // if (!targetTspFiles || targetTspFiles.length === 0) {
+  //   logger.info("No entrypoint file found. Emitting Cancelled.", [], {
+  //     showOutput: true,
+  //     showPopup: true,
+  //   });
+  //   tel.lastStep = "Check entrypoint file";
+  //   return ResultCode.Cancelled;
+  // }
+  // if (targetTspFiles.length === 1) {
+  //   tspProjectFile = targetTspFiles[0];
+  // } else {
+  //   const toProjectPickItem = (filePath: string): any => {
+  //     return {
+  //       label: `Project: ${filePath}`,
+  //       path: filePath,
+  //       iconPath: {
+  //         light: Uri.file(context.asAbsolutePath(`./icons/tsp-file.light.svg`)),
+  //         dark: Uri.file(context.asAbsolutePath(`./icons/tsp-file.dark.svg`)),
+  //       },
+  //     };
+  //   };
+  //   const typespecProjectQuickPickItems: any[] = targetTspFiles.map((filePath) =>
+  //     toProjectPickItem(filePath),
+  //   );
+  //   const selectedProjectFile = await vscode.window.showQuickPick(typespecProjectQuickPickItems, {
+  //     title: "Emit from TypeSpec",
+  //     canPickMany: false,
+  //     placeHolder: "Select a project",
+  //     ignoreFocusOut: true,
+  //   });
+  //   if (!selectedProjectFile) {
+  //     logger.info("No project selected. Emitting Cancelled.", [], {
+  //       showOutput: true,
+  //       showPopup: true,
+  //     });
+  //     tel.lastStep = "Select project for entrypoint";
+  //     return ResultCode.Cancelled;
+  //   }
+  //   tspProjectFile = selectedProjectFile.path;
+  // }
+
+  const tspProjectFile = await chooseTspProjectFile(context, uri, tel, getEntrypointTspFilesFunc);
+  if (!tspProjectFile) {
+    logger.info("No project selected. Emitting Cancelled.", [], {
+      showOutput: true,
+      showPopup: true,
+    });
+    tel.lastStep = "Select project for entrypoint";
+    return ResultCode.Cancelled;
   }
+  logger.info(`Emit from entrypoint file: ${tspProjectFile}`);
+
+  const selectedEmitters = await selectEmitters(tspProjectFile, emitters, context, uri, tel);
+  if (!selectedEmitters || selectedEmitters.length === 0) {
+    logger.info("No emitter selected. Emitting Cancelled.", [], {
+      showOutput: true,
+      showPopup: true,
+    });
+    tel.lastStep = "Select emitters";
+    return ResultCode.Cancelled;
+  }
+  return await doEmit(tspProjectFile, selectedEmitters, tel, resolveOutputDirFunc);
+}
+
+export async function chooseTspProjectFile(
+  context: vscode.ExtensionContext,
+  uri: vscode.Uri,
+  tel: OperationTelemetryEvent,
+  getEntrypointTspFilesFunc?: (uri: vscode.Uri) => Promise<string[]>,
+): Promise<string | undefined> {
+  let tspProjectFile: string | undefined = undefined;
   if (getEntrypointTspFilesFunc) {
     logger.info("Using custom entrypoint file finder.");
     const customEntrypointTspFiles = await getEntrypointTspFilesFunc(uri);
@@ -643,29 +732,22 @@ export async function emitCode(
       placeHolder: "Select a project",
       ignoreFocusOut: true,
     });
-    if (!selectedProjectFile) {
-      logger.info("No project selected. Emitting Cancelled.", [], {
-        showOutput: true,
-        showPopup: true,
-      });
-      tel.lastStep = "Select project for entrypoint";
-      return ResultCode.Cancelled;
+    if (selectedProjectFile) {
+      tspProjectFile = selectedProjectFile.path;
     }
-    tspProjectFile = selectedProjectFile.path;
+    // if (!selectedProjectFile) {
+    //   logger.info("No project selected. Emitting Cancelled.", [], {
+    //     showOutput: true,
+    //     showPopup: true,
+    //   });
+    //   tel.lastStep = "Select project for entrypoint";
+    //   return ResultCode.Cancelled;
+    // }
+    // tspProjectFile = selectedProjectFile.path;
   }
-
-  logger.info(`Emit from entrypoint file: ${tspProjectFile}`);
-
-  const selectedEmitters = await selectEmitters(tspProjectFile, emitters, context, uri, tel);
-  if (!selectedEmitters || selectEmitters.length === 0) {
-    logger.info("No emitter selected. Emitting Cancelled.");
-    tel.lastStep = "Select emitters";
-    return ResultCode.Cancelled;
-  }
-  return await doEmit(tspProjectFile, selectedEmitters, tel, resolveOutputDirFunc);
+  return tspProjectFile;
 }
-
-async function selectEmitters(
+export async function selectEmitters(
   tspProjectFile: string,
   emitters: Emitter[] | undefined,
   context: vscode.ExtensionContext,
