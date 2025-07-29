@@ -120,7 +120,7 @@
         },
         {
           "command": "typespec.emitCode",
-          "when": "explorerResourceIsFolder || resourceLangId == typespec || resourceFilename == 'tspconfig.yaml'",
+          "when": "!hideCommand && ( explorerResourceIsFolder || resourceLangId == typespec || resourceFilename == 'tspconfig.yaml')",
           "group": "typespec@1"
         },
         {
@@ -132,7 +132,7 @@
       "editor/context": [
         {
           "command": "typespec.emitCode",
-          "when": "resourceLangId == typespec || resourceFilename == 'tspconfig.yaml'",
+          "when": "!hideCommand && (resourceLangId == typespec || resourceFilename == 'tspconfig.yaml')",
           "group": "typespec@1"
         },
         {
@@ -174,7 +174,8 @@
       {
         "command": "typespec.emitCode",
         "title": "Emit from TypeSpec",
-        "category": "TypeSpec"
+        "category": "TypeSpec",
+        "when": "!hideCommand"
       },
       {
         "command": "typespec.createProject",
