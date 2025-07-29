@@ -298,6 +298,7 @@ export async function activate(context: ExtensionContext) {
   return {
     lspClient: tspLanguageClient,
     emitCodeFunc: emitCode,
+    context: context,
   };
 }
 
