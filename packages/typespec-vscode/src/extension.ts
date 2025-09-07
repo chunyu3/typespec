@@ -2,6 +2,7 @@
 // sort-imports-ignore
 import "./pre-extension-activate.js";
 
+import path from "path";
 import vscode, { commands, ExtensionContext, TabInputText } from "vscode";
 import { State } from "vscode-languageclient";
 import { createCodeActionProvider } from "./code-action-provider.js";
@@ -27,7 +28,12 @@ import {
   TypeSpecExtensionApi,
 } from "./types.js";
 import { installCompilerWithUi } from "./typespec-utils.js";
-import { isWhitespaceStringOrUndefined, spawnExecutionAndLogToOutput } from "./utils.js";
+import {
+  isWhitespaceStringOrUndefined,
+  spawnExecutionAndLogToOutput,
+  tryReadFile,
+  tryWriteFile,
+} from "./utils.js";
 import {
   createTypeSpecProject,
   InitTemplatesUrlSetting,
@@ -46,6 +52,21 @@ const outputChannel = new TypeSpecLogOutputChannel("TypeSpec");
 logger.registerLogListener("extension-log", new ExtensionLogListener(outputChannel));
 
 export async function activate(context: ExtensionContext) {
+  /**
+   * inject copilot instruction
+   */
+
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders) {
+    vscode.window.showErrorMessage("No workspace folder open.");
+    return;
+  }
+  const filePath = path.join(".github", "copilot-instruction.md");
+  const content = await tryReadFile(filePath);
+  if (content) {
+    await tryWriteFile(filePath, content);
+  }
+
   await telemetryClient.doOperationWithTelemetry(
     TelemetryEventName.StartExtension,
     async (tel: OperationTelemetryEvent) => {

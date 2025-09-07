@@ -1,7 +1,7 @@
 import type { ModuleResolutionResult, PackageJson, ResolveModuleHost } from "@typespec/compiler";
 import { SpawnOptions } from "child_process";
 import { spawn } from "cross-spawn";
-import { mkdtemp, readdir, readFile, realpath, stat } from "fs/promises";
+import { mkdtemp, readdir, readFile, realpath, stat, writeFile } from "fs/promises";
 import { dirname } from "path";
 import vscode, { CancellationToken } from "vscode";
 import { Executable } from "vscode-languageclient/node.js";
@@ -135,6 +135,15 @@ export async function tryReadFile(path: string): Promise<string | undefined> {
     return content;
   } catch (e) {
     logger.debug(`Failed to read file: ${path}`, [e]);
+    return undefined;
+  }
+}
+
+export async function tryWriteFile(path: string, content: string) {
+  try {
+    await writeFile(path, content);
+  } catch (e) {
+    logger.debug(`Failed to write file: ${path}`, [e]);
     return undefined;
   }
 }
