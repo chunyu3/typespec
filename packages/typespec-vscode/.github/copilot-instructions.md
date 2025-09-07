@@ -24,3 +24,12 @@ When encountering a TypeSpec-related task, follow this process:
 applyTo: "**/*.tsp"
 
 ## Example Use Case
+
+## ✅ Best Practices
+- Always prefer using \`azsdk-qa-bot\` before attempting manual fixes.
+- Ensure the applied solution aligns with project standards and passes validation.
+- Document any changes made based on bot recommendations in commit messages or PR descriptions.
+
+## 🚫 Avoid
+- Making speculative changes to TypeSpec without consulting \`azsdk-qa-bot\`.
+- Skipping the extraction step—always verify the solution before applying.
