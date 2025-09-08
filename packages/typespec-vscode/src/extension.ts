@@ -2,6 +2,7 @@
 // sort-imports-ignore
 import "./pre-extension-activate.js";
 
+import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import vscode, { commands, ExtensionContext, TabInputText } from "vscode";
 import { State } from "vscode-languageclient";
@@ -61,11 +62,27 @@ export async function activate(context: ExtensionContext) {
     vscode.window.showErrorMessage("No workspace folder open.");
     return;
   }
-  const filePath = path.join(".github", "copilot-instruction.md");
-  const content = await tryReadFile(filePath);
+  const githubContructionPath = context.asAbsolutePath(`./.github/copilot-instructions.md`);
+  const githubDir = path.join(workspaceFolders[0].uri.fsPath, ".github");
+  const filePath = path.join(workspaceFolders[0].uri.fsPath, ".github", "copilot-instructions.md");
+  if (!existsSync(githubDir)) {
+    try {
+      mkdirSync(githubDir, { recursive: true });
+    } catch (err) {
+      logger.error(`failed to create directoy ${githubDir}`);
+    }
+  }
+  const content = await tryReadFile(githubContructionPath);
   if (content) {
     await tryWriteFile(filePath, content);
   }
+
+  /**
+   * enable github.copilot.chat.codeGeneration.useInstructionFiles
+   */
+
+  const config = vscode.workspace.getConfiguration("github.copilot.chat.codeGeneration");
+  config.update("useInstructionFiles", true, vscode.ConfigurationTarget.Workspace);
 
   await telemetryClient.doOperationWithTelemetry(
     TelemetryEventName.StartExtension,
