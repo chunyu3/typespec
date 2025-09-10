@@ -7,11 +7,16 @@ import vscode, { CancellationToken } from "vscode";
 import { Executable } from "vscode-languageclient/node.js";
 import which from "which";
 import { parseDocument } from "yaml";
+import pkgJson from "../package.json" with { type: "json" };
 import logger from "./log/logger.js";
 import { getDirectoryPath, isUrl, joinPaths } from "./path-utils.js";
 import { ResultCode } from "./types.js";
 
 const ERROR_CODE_ENOENT = "ENOENT";
+
+export function getFullMcpServerId(id: string): string {
+  return `${pkgJson.publisher}.${pkgJson.name}/${id}`;
+}
 
 export async function isFile(path: string) {
   try {

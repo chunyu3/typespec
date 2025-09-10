@@ -30,6 +30,7 @@ import {
 } from "./types.js";
 import { installCompilerWithUi } from "./typespec-utils.js";
 import {
+  getFullMcpServerId,
   isWhitespaceStringOrUndefined,
   spawnExecutionAndLogToOutput,
   tryReadFile,
@@ -83,6 +84,37 @@ export async function activate(context: ExtensionContext) {
 
   const config = vscode.workspace.getConfiguration("github.copilot.chat.codeGeneration");
   config.update("useInstructionFiles", true, vscode.ConfigurationTarget.Workspace);
+
+  /**
+   * register and start mcp server
+   */
+
+  const qa_bot_mcp = vscode.lm.registerMcpServerDefinitionProvider("azsdk-qa-bot", {
+    // onDidChangeMcpServerDefinitions: didChangeEmitter.event,
+    provideMcpServerDefinitions: async () => {
+      const output: vscode.McpServerDefinition[] = [];
+      const mcpServerDefinition = new vscode.McpStdioServerDefinition(
+        "azure sdk qa bot mcp server",
+        "D:\\dev\\chatbotmcp\\azure-sdk-tools\\artifacts\\bin\\Azure.Sdk.Tools.Cli\\Debug\\net8.0\\azsdk",
+        ["start"],
+      );
+      // mcpServerDefinition.cwd = vscode.Uri.file("C:/project/azure-sdk-for-python");
+      output.push(mcpServerDefinition);
+      return output;
+    },
+  });
+
+  context.subscriptions.push(qa_bot_mcp);
+
+  /**
+   * start azure-qa-bot mcp server
+   */
+  const fullId = getFullMcpServerId("azsdk-qa-bot");
+  try {
+    await vscode.commands.executeCommand("workbench.mcp.startServer", fullId);
+  } catch (error) {
+    return `Failed to start MCP server with ID '${fullId}': ${error}`;
+  }
 
   await telemetryClient.doOperationWithTelemetry(
     TelemetryEventName.StartExtension,
